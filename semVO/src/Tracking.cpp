@@ -16,6 +16,8 @@
 using namespace std;
 using namespace Eigen;
 
+typedef Matrix<double, 7, 1> Vector7d;
+
 Tracking::Tracking() {
 
     InitToGround = cv::Mat::eye(4, 4, CV_32F);
@@ -46,8 +48,30 @@ Tracking::Tracking() {
     detect_cuboid_obj->print_details = false;
     detect_cuboid_obj->set_calibration(Kalib);
 
-    // TODO: truth cam poses?
+    detect_cuboid_obj->whether_plot_detail_images = false;
+    detect_cuboid_obj->whether_plot_final_images = false;
+    detect_cuboid_obj->print_details = false;
+    detect_cuboid_obj->set_calibration(Kalib);
+    detect_cuboid_obj->whether_sample_bbox_height = false;
+    detect_cuboid_obj->nominal_skew_ratio = 2;
+    detect_cuboid_obj->whether_save_final_images = false;
 
+    line_lbd_obj.use_LSD = true;
+    line_lbd_obj.line_length_thres = 15;
+
+    // graph optimization
+
+    g2o::BlockSolverX::LinearSolverType* linearSolver;
+    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
+    g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
+    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
+    graph.setAlgorithm(solver);    graph.setVerbose(false);
+
+//    fixed_init_cam_pose_Twc(first_truth_frame_pose.tail<7>());
+    Eigen::Quaterniond init_cam_pose_q(init_qw, init_qx, init_qy, init_qz);
+    Eigen::Vector3d init_cam_pose_v(init_x, init_y, init_z);
+
+    fixed_init_cam_pose_Twc = g2o::SE3Quat(init_cam_pose_q, init_cam_pose_v);
 }
 Tracking::~Tracking() {}
 
@@ -55,18 +79,18 @@ Tracking::~Tracking() {}
 
 void Tracking::Track() {// 有sub vins_estiamtor 的tracked_image topics 因此无需init
     // 假设已经初始化完成
-    queue<sensor_msgs::ImageConstPtr> key_buf = keyimg_buf;
-    if(!key_buf.empty()){
-        __TRACK_DEBUG_PRINT__(cout<<"[Tracking/Track()] Keyframe image of size: %d"<< keyimg_buf.size() << endl;)
-    }
-    while(key_buf.size() > 0){
-        sensor_msgs::ImageConstPtr img_msg = key_buf.front();
-        key_buf.pop();
-        img_t = img_msg->header.stamp;
-        __TRACK_DEBUG_PRINT__(cout<<"[Tracking/Track()] poped() raw image t="<< img_msg->header.stamp << "#######> ie." << endl;)
-        cv::Mat img = setImageFromMsg(img_msg);
-        CreateNewKeyFrame(img, img_msg->header.seq);
-    }
+//    queue<sensor_msgs::ImageConstPtr> key_buf = keyimg_buf;
+//    if(!key_buf.empty()){
+//        __TRACK_DEBUG_PRINT__(cout<<"[Tracking/Track()] Keyframe image of size: %d"<< keyimg_buf.size() << endl;)
+//    }
+//    while(key_buf.size() > 0){
+//        sensor_msgs::ImageConstPtr img_msg = key_buf.front();
+//        key_buf.pop();
+//        img_t = img_msg->header.stamp;
+//        __TRACK_DEBUG_PRINT__(cout<<"[Tracking/Track()] poped() raw image t="<< img_msg->header.stamp << "#######> ie." << endl;)
+//        cv::Mat img = setImageFromMsg(img_msg);
+//        CreateNewKeyFrame(img, img_msg->header.seq);
+//    }
 
 
 
@@ -113,48 +137,48 @@ void Tracking::inputImage(const cv::Mat& img)
 
 }
 
-void Tracking::inputFrameBboxes2trian(darknet_ros_msgs::BoundingBoxes frame_bboxes,
-        darknet_ros_msgs::BoundingBoxes frame_bboxes_next)
-{
-    std::vector<cv::Point2f> points1, points2;
-//    for (const auto & bboxes : frame_bboxes.bounding_boxes)
+//void Tracking::inputFrameBboxes2trian(darknet_ros_msgs::BoundingBoxes frame_bboxes,
+//        darknet_ros_msgs::BoundingBoxes frame_bboxes_next)
+//{
+//    std::vector<cv::Point2f> points1, points2;
+////    for (const auto & bboxes : frame_bboxes.bounding_boxes)
+////    {
+////        cv::Point2f points;
+////        points.x = static_cast<float>((bboxes.xmin + bboxes.xmax)/2);
+////        points.y = static_cast<float>((bboxes.ymin + bboxes.ymax)/2);
+////        points1.push_back(points);
+////    }
+//    bboxes2CenterPpoints2f(frame_bboxes, points1);
+//    bboxes2CenterPpoints2f(frame_bboxes_next, points2);
+//
+//    //-- 估计两张图像间运动
+//    cv::Mat R, t;
+//    framer.pose_estimation_2d2d(points1, points2, R, t);
+//
+//    //-- 三角化
+//    std::vector<cv::Point3d> points_3d;
+//    framer.triangulation(points1, points2, R, t, points_3d);
+//
+//    //验证三角化点与特征点的重投影关系
+//    for (int i = 0; i < points_3d.size(); ++i)
 //    {
-//        cv::Point2f points;
-//        points.x = static_cast<float>((bboxes.xmin + bboxes.xmax)/2);
-//        points.y = static_cast<float>((bboxes.ymin + bboxes.ymax)/2);
-//        points1.push_back(points);
+//        cv::Point2d pt1_cam = framer.pixel2cam(points1[i], framer.K);
+//        cv::Point2d pt1_cam_3d(
+//                points_3d[i].x/points_3d[i].z,
+//                points_3d[i].y/points_3d[i].z
+//                );
+//        cout<<"point in the first camera frame: "<<pt1_cam<<endl;
+//        cout<<"point projected from 3D "<<pt1_cam_3d<<", d="<<points_3d[i].z<<endl;
+//        //第二张图
+//        cv::Point2f pt2_cam = framer.pixel2cam(points2[i], framer.K);
+//        cv::Mat pt2_trans = R*(Mat_<double>(3,1)<<
+//                points_3d[i].x, points_3d[i].y, points_3d[i].z)+t;
+//        pt2_trans /= pt2_trans.at<double>(2,0);
+//
+//        cout<<"point in the second camera frame: "<<pt2_cam<<endl;
+//        cout<<"point reprojected from second frame: "<<pt2_trans.t()<<endl;
 //    }
-    bboxes2CenterPpoints2f(frame_bboxes, points1);
-    bboxes2CenterPpoints2f(frame_bboxes_next, points2);
-
-    //-- 估计两张图像间运动
-    cv::Mat R, t;
-    framer.pose_estimation_2d2d(points1, points2, R, t);
-
-    //-- 三角化
-    std::vector<cv::Point3d> points_3d;
-    framer.triangulation(points1, points2, R, t, points_3d);
-
-    //验证三角化点与特征点的重投影关系
-    for (int i = 0; i < points_3d.size(); ++i)
-    {
-        cv::Point2d pt1_cam = framer.pixel2cam(points1[i], framer.K);
-        cv::Point2d pt1_cam_3d(
-                points_3d[i].x/points_3d[i].z,
-                points_3d[i].y/points_3d[i].z
-                );
-        cout<<"point in the first camera frame: "<<pt1_cam<<endl;
-        cout<<"point projected from 3D "<<pt1_cam_3d<<", d="<<points_3d[i].z<<endl;
-        //第二张图
-        cv::Point2f pt2_cam = framer.pixel2cam(points2[i], framer.K);
-        cv::Mat pt2_trans = R*(Mat_<double>(3,1)<<
-                points_3d[i].x, points_3d[i].y, points_3d[i].z)+t;
-        pt2_trans /= pt2_trans.at<double>(2,0);
-
-        cout<<"point in the second camera frame: "<<pt2_cam<<endl;
-        cout<<"point reprojected from second frame: "<<pt2_trans.t()<<endl;
-    }
-}
+//}
 
 void Tracking::bboxes2CenterPpoints2f(darknet_ros_msgs::BoundingBoxes frame_bboxes,
                                 std::vector<cv::Point2f>& Points)
@@ -262,19 +286,50 @@ double Tracking::computeError(Matrix42d keyframeCoor, Matrix42d frameCoor)
     return sqrt( pow( (d02 - d02_) ,2 ) ) / (d01 + d12 + d23 + d30 + d01_ + d12_ + d23_ + d30_);
 }
 
-void Tracking::DetectCuboid(const cv::Mat& raw_image, cv::Mat camera_pose)// get 'Keyframe *pKF' from vins_fusion, also a signal image
+#define __TRACKING_DETECTCUBOID_DEBUG__(msg) msg;
+
+void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' from vins_fusion, also a signal image
 {
-    cv::Mat pop_pose_to_ground = InitToGround;
-    std::vector<ObjectSet> all_obj_cubes;
-    std::vector<double> all_box_confidence;
-    std::vector<int> truth_tracklet_ids;
+    g2o::SE3Quat curr_cam_pose_Twc;
+    g2o::SE3Quat odom_val; // from previous frame to current frame
+
+
+    if(frame_index == 0)
+        curr_cam_pose_Twc = fixed_init_cam_pose_Twc;
+    else{
+        g2o::SE3Quat prev_pose_Tcw = all_frames[frame_index-1]->cam_pose_Tcw;
+        if (frame_index>1)  // from third frame, use constant motion model to initialize camera.
+        {
+            g2o::SE3Quat prev_prev_pose_Tcw = all_frames[frame_index-2]->cam_pose_Tcw;
+            odom_val = prev_pose_Tcw*prev_prev_pose_Tcw.inverse();
+        }
+        curr_cam_pose_Twc = (odom_val*prev_pose_Tcw).inverse();
+    }
+
+    tracking_frame* currframe = new tracking_frame();
+    currframe->frame_img = frame_index;
+//    all_frames[frame_index] = currframe;
+    all_frames.push_back(currframe);
+
+    bool has_detected_cuboid = false;
+    g2o::cuboid cube_local_meas; double proposal_error;
+
+    // edge detection
+    cv::Mat all_lines_mat;
+    line_lbd_obj.detect_filter_lines(raw_rgb_image, all_lines_mat);
+    Eigen::MatrixXd all_lines_raw(all_lines_mat.rows, 4);
+    for (int rr = 0; rr < all_lines_mat.rows; ++rr) {
+        for (int cc = 0; cc < 4; ++cc) {
+            all_lines_raw(rr,cc) = all_lines_mat.at<float>(rr,cc);
+        }
+    }
 
     std::vector<Vector4d> good_object_bbox;
     const int bboxes_length = keyframe_bboxes.bounding_boxes.size();
     Eigen::Matrix<double, Dynamic, Dynamic> all_object_coor(bboxes_length, 5);
 
-    int img_width = raw_image.cols;
-    int img_length = raw_image.rows;
+    int img_width = raw_rgb_image.cols;
+    int img_length = raw_rgb_image.rows;
 
     // remove some 2d bboxes too close to boundary
     int boundary_threshold = 20;
@@ -293,7 +348,7 @@ void Tracking::DetectCuboid(const cv::Mat& raw_image, cv::Mat camera_pose)// get
         object_bbox << xmin, ymin, width, length, prob;//01234
 
         if((object_bbox(0) < boundary_threshold) || (object_bbox(0) + object_bbox(2) > img_width - boundary_threshold)
-        || (object_bbox(1) < boundary_threshold) || (object_bbox(1) + object_bbox(3) > img_length - boundary_threshold))
+           || (object_bbox(1) < boundary_threshold) || (object_bbox(1) + object_bbox(3) > img_length - boundary_threshold))
             continue;
 //        good_object_bbox.push_back(object_bbox);
         for (int cc = 0; cc < 5; ++cc) {
@@ -302,74 +357,89 @@ void Tracking::DetectCuboid(const cv::Mat& raw_image, cv::Mat camera_pose)// get
         count++;
     }
 
-//    line_lbd_obj.detect_filter_lines(raw_image, all)
-//    detect_cuboid_obj = framer.detect_cuboid_obj;
+    Matrix4d transToWorld;
+    detect_cuboid_obj->whether_sample_cam_roll_pitch = (frame_index!=0);
+    if(detect_cuboid_obj->whether_sample_cam_roll_pitch)
+        transToWorld = fixed_init_cam_pose_Twc.to_homogeneous_matrix();
+    else
+        transToWorld = curr_cam_pose_Twc.to_homogeneous_matrix();
 
-    // edge detection
-    cv::Mat all_lines_mat;
-    line_lbd_obj.detect_filter_lines(raw_image, all_lines_mat);
-    Eigen::MatrixXd all_lines_raw(all_lines_mat.rows, 4);
-    for (int rr = 0; rr < all_lines_mat.rows; ++rr) {
-        for (int cc = 0; cc < 4; ++cc) {
-            all_lines_raw(rr, cc) = all_lines_mat.at<float>(rr, cc);
-        }
-    }
+    detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, frames_cuboid);
 
-//    cv::Mat frame_pose_to_init;// get vins fusion camera pose inverse
-    cv::Mat frame_pose_to_ground = camera_pose;
-    frame_pose_to_ground = InitToGround * frame_pose_to_ground;
-
-    Eigen::Matrix4f cam_transToGround = Converter::toMatrix4f(frame_pose_to_ground);
-
-    // TODO: transToGround 解决raw_image的pose问题
-    detect_cuboid_obj->detect_cuboid(raw_image, cam_transToGround.cast<double>(), all_object_coor, all_lines_raw, frames_cuboid);
-
-    g2o::SE3Quat frame_pose_to_init = Converter::toSE3Quat(camera_pose);
-    g2o::SE3Quat InitToGround_se3 = Converter::toSE3Quat(InitToGround);
-
-    g2o::cuboid cube_local_meas;
-//    g2o::SE3Quat curr_cam_pose_Twc = Converter::toSE3Quat();
-
-    has_detected_cuboid = !frames_cuboid.empty();
-    if(has_detected_cuboid)
-    {
-        for (int ii = 0; ii < (int)frames_cuboid.size(); ++ii)
-        {
-
-            cuboid *raw_cuboid = frames_cuboid[ii][0];
-            g2o::cuboid cube_ground_value;// [x y z yaw l w h]
-            Vector9d cube_pose;
-            cube_pose << raw_cuboid->pos[0], raw_cuboid->pos[1], raw_cuboid->pos[2], 0, 0, raw_cuboid->rotY,
-            raw_cuboid->scale[0], raw_cuboid->scale[1], raw_cuboid->scale[2];
-            cube_ground_value.fromMinimalVector(cube_pose);
-
-//            cube_local_meas = cube_ground_value.transform_to(pop_pose_to_ground);
-
-            // TODO pub frames_cuboid###########################################################
-            //// raw_cuboid
-            // MakerArray.size() = frames_cuboid.size * 2
-            visualization_msgs::MarkerArray frame_long_markers;
-            visualization_msgs::MarkerArray frame_markers;
-            std::vector<object_landmark*> cube_pose_raw_detected_history(frames_cuboid[ii].size(), nullptr);
-
-//            for (int jj = 0; jj < frames_cuboid[ii].size(); ++jj) {
-//                cuboid *raw_cuboid = frames_cuboid[ii][jj];
-//                frame_markers = cuboids_to_marker(raw_cuboid, Vector3d(0,0,1));// return MakerArray.size()=2
-//                for frame_long_markers = [frame_markers, frame_markers, ...]
-//                object_landmark *tempcuboids2 = new object_landmark();
-//                tempcuboids2->cube_vertex = new g2o::VertexCuboid();// ye
-//                cuboid *raw_cuboid = all_obj_cubes[ii][0];
-//                g2o::cuboid cube_ground_value;
-//                Vector
-//            }
-
-//            dataManager.cube_makers_pub(frame_long_markers);
-
-                // measurement in local frame! important
+#define DEBUG
+    __TRACKING_DETECTCUBOID_DEBUG__(cout<<"[tracking/DetectCuboid()] detected frames_cuboids size: "<< frames_cuboid.size()<<endl;)
+    frame_index++;
 
 
-        }
-    }
+
+//    cv::Mat pop_pose_to_ground = InitToGround;
+//    std::vector<ObjectSet> all_obj_cubes;
+//    std::vector<double> all_box_confidence;
+//    std::vector<int> truth_tracklet_ids;
+//
+//
+//
+////    line_lbd_obj.detect_filter_lines(raw_image, all)
+////    detect_cuboid_obj = framer.detect_cuboid_obj;
+//
+//
+//
+//
+////    cv::Mat frame_pose_to_init;// get vins fusion camera pose inverse
+//    cv::Mat frame_pose_to_ground = camera_pose;
+//    frame_pose_to_ground = InitToGround * frame_pose_to_ground;
+//
+//    Eigen::Matrix4f cam_transToGround = Converter::toMatrix4f(frame_pose_to_ground);
+//
+//    // TODO: transToGround 解决raw_image的pose问题
+//    detect_cuboid_obj->detect_cuboid(raw_image, cam_transToGround.cast<double>(), all_object_coor, all_lines_raw, frames_cuboid);
+//
+//    g2o::SE3Quat frame_pose_to_init = Converter::toSE3Quat(camera_pose);
+//    g2o::SE3Quat InitToGround_se3 = Converter::toSE3Quat(InitToGround);
+//
+//    g2o::cuboid cube_local_meas;
+////    g2o::SE3Quat curr_cam_pose_Twc = Converter::toSE3Quat();
+//
+//    has_detected_cuboid = !frames_cuboid.empty();
+//    if(has_detected_cuboid)
+//    {
+//        for (int ii = 0; ii < (int)frames_cuboid.size(); ++ii)
+//        {
+//
+//            cuboid *raw_cuboid = frames_cuboid[ii][0];
+//            g2o::cuboid cube_ground_value;// [x y z yaw l w h]
+//            Vector9d cube_pose;
+//            cube_pose << raw_cuboid->pos[0], raw_cuboid->pos[1], raw_cuboid->pos[2], 0, 0, raw_cuboid->rotY,
+//            raw_cuboid->scale[0], raw_cuboid->scale[1], raw_cuboid->scale[2];
+//            cube_ground_value.fromMinimalVector(cube_pose);
+//
+////            cube_local_meas = cube_ground_value.transform_to(pop_pose_to_ground);
+//
+//            // TODO pub frames_cuboid###########################################################
+//            //// raw_cuboid
+//            // MakerArray.size() = frames_cuboid.size * 2
+//            visualization_msgs::MarkerArray frame_long_markers;
+//            visualization_msgs::MarkerArray frame_markers;
+//            std::vector<object_landmark*> cube_pose_raw_detected_history(frames_cuboid[ii].size(), nullptr);
+//
+////            for (int jj = 0; jj < frames_cuboid[ii].size(); ++jj) {
+////                cuboid *raw_cuboid = frames_cuboid[ii][jj];
+////                frame_markers = cuboids_to_marker(raw_cuboid, Vector3d(0,0,1));// return MakerArray.size()=2
+////                for frame_long_markers = [frame_markers, frame_markers, ...]
+////                object_landmark *tempcuboids2 = new object_landmark();
+////                tempcuboids2->cube_vertex = new g2o::VertexCuboid();// ye
+////                cuboid *raw_cuboid = all_obj_cubes[ii][0];
+////                g2o::cuboid cube_ground_value;
+////                Vector
+////            }
+//
+////            dataManager.cube_makers_pub(frame_long_markers);
+//
+//                // measurement in local frame! important
+//
+//
+//        }
+//    }
 }
 
 visualization_msgs::MarkerArray Tracking::cuboids_to_marker(cuboid *raw_cuboid, Vector3d rgbcolor) {

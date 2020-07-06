@@ -33,6 +33,12 @@
 
 #include "g2o_Object.h"
 #include "Object_landmark.h"
+#include "Thirdparty/g2o/g2o/types/se3quat.h"
+#include "Thirdparty/g2o/g2o/core/block_solver.h"
+#include "Thirdparty/g2o/g2o/core/optimization_algorithm_levenberg.h"
+#include "Thirdparty/g2o/g2o/solvers/linear_solver_eigen.h"
+#include "Thirdparty/g2o/g2o/types/types_six_dof_expmap.h"
+#include "Thirdparty/g2o/g2o/solvers/linear_solver_dense.h"
 
 typedef Eigen::Matrix<double, 3, 8> Matrix38d;
 typedef Eigen::Matrix<double, 4, 2> Matrix42d;
@@ -46,8 +52,7 @@ private:
     ros::NodeHandle n;
 
     GraphMatching<TopoMetric_c, Node_c> graphmatching_h;
-    DataManager dataManager;
-    Frame framer;//用于对极约束和三角化
+//    DataManager dataManager;
 
 public:
 
@@ -63,11 +68,11 @@ public:
     double computeError(Matrix42d keyframeCoor, Matrix42d frameCoor);
 
 private:
-    queue<nav_msgs::Odometry> pose_buf = dataManager.getCameraPose();
-    queue<darknet_ros_msgs::BoundingBoxes> keyframe_bboxes_buf = dataManager.getKeyframeBboxes();
-    queue<darknet_ros_msgs::BoundingBoxes> frame_bboxes_buf = dataManager.getFrameBboxes();
-    queue<sensor_msgs::ImageConstPtr> img_buf = dataManager.getFrameImage();
-    queue<sensor_msgs::ImageConstPtr> keyimg_buf = dataManager.getKeyframeImage();
+//    queue<nav_msgs::Odometry> pose_buf = dataManager.getCameraPose();
+//    queue<darknet_ros_msgs::BoundingBoxes> keyframe_bboxes_buf = dataManager.getKeyframeBboxes();
+//    queue<darknet_ros_msgs::BoundingBoxes> frame_bboxes_buf = dataManager.getFrameBboxes();
+//    queue<sensor_msgs::ImageConstPtr> img_buf = dataManager.getFrameImage();
+//    queue<sensor_msgs::ImageConstPtr> keyimg_buf = dataManager.getKeyframeImage();
     std::mutex m_buf;
 
 
@@ -85,12 +90,23 @@ public:
 
     bool whether_save_online_detected_cuboids;
     bool whether_save_final_optimized_cuboids;
-    bool has_detected_cuboid;
+//    bool has_detected_cuboid;
+
+    Eigen::MatrixXd first_truth_frame_pose;
+    g2o::SparseOptimizer graph;
+    g2o::SE3Quat fixed_init_cam_pose_Twc;
+
+    vector<object_landmark*> cube_pose_opti_history;
+    vector<object_landmark*> cube_pose_raw_detected_history;
+    vector<tracking_frame*> all_frames;
+    g2o::VertexCuboid* vCube;
+
+    int frame_index = 0;
 
 public:
     void Track();// main tracking function. input sensor dataset;
     void CreateNewKeyFrame(cv::Mat img, uint32_t imgID);
-    void DetectCuboid(const cv::Mat& raw_image, cv::Mat camera_pose);
+    void DetectCuboid(const cv::Mat& raw_image);
     void AssociateCuboid();
     bool MatchCuboid(darknet_ros_msgs::BoundingBoxes keyframe_bboxes, darknet_ros_msgs::BoundingBoxes frame_bboxes);//keyframe_bboxes, frame_bboxes;
     cv::Mat setImageFromMsg(const sensor_msgs::ImageConstPtr msg);

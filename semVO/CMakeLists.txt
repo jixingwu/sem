@@ -29,6 +29,7 @@ include_directories(${catkin_INCLUDE_DIRS} ${CERES_INCLUDE_DIRS})
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package(Eigen3)
 include_directories(
+  ${PROJECT_SOURCE_DIR}
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
 )
@@ -69,7 +70,8 @@ add_library(cube_vo_lib
         src/Tracking.cpp
     )
 
-target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} ${G2O_LIBRARIES})
+target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} ${G2O_LIBRARIES}
+        )
 
 
 #add_executable(vins_node src/rosNodeTest.cpp)
@@ -82,5 +84,5 @@ target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIB
 #target_link_libraries(kitti_gps_test vins_lib)
 
 add_executable(cube_vo_test src/cube_vo_node.cpp)
-target_link_libraries(cube_vo_test cube_vo_lib)
+target_link_libraries(cube_vo_test cube_vo_lib ${PROJECT_SOURCE_DIR}/src/Thirdparty/g2o/lib/libg2o.so)
 
