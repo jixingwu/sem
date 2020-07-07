@@ -17,10 +17,29 @@ using namespace std;
 using namespace Eigen;
 
 typedef Matrix<double, 7, 1> Vector7d;
-
+#define __TRACKING_DEBUG__(msg) msg;
 Tracking::Tracking() {
 
-    InitToGround = cv::Mat::eye(4, 4, CV_32F);
+//    InitToGround = cv::Mat::eye(4, 4, CV_32F);
+//    // set initial camera pose wrt ground. by default camera parallel to ground, height=1.7 (kitti)
+//    double init_x, init_y, init_z, init_qx, init_qy, init_qz, init_qw;
+//    n.param<double>("init_x", init_x, 0);
+//    n.param<double>("init_y", init_y, 0);
+//    n.param<double>("init_z", init_z, 1.7);
+//    n.param<double>("init_qx", init_qx, -0.7071);
+//    n.param<double>("init_qy", init_qy, 0);
+//    n.param<double>("init_qz", init_qz, 0);
+//    n.param<double>("init_qw", init_qw, 0.7071);
+//    Eigen::Quaternionf pose_quat(init_qw, init_qx, init_qy, init_qz);
+//    Eigen::Matrix3f rot = pose_quat.toRotationMatrix(); // 	The quaternion is required to be normalized
+//    for (int row = 0; row < 3; row++)
+//        for (int col = 0; col < 3; col++)
+//            InitToGround.at<float>(row, col) = rot(row, col);
+//
+//    InitToGround.at<float>(0, 3) = init_x;
+//    InitToGround.at<float>(1, 3) = init_y;
+//    InitToGround.at<float>(2, 3) = init_z;
+
     // set initial camera pose wrt ground. by default camera parallel to ground, height=1.7 (kitti)
     double init_x, init_y, init_z, init_qx, init_qy, init_qz, init_qw;
     n.param<double>("init_x", init_x, 0);
@@ -30,19 +49,9 @@ Tracking::Tracking() {
     n.param<double>("init_qy", init_qy, 0);
     n.param<double>("init_qz", init_qz, 0);
     n.param<double>("init_qw", init_qw, 0.7071);
-    Eigen::Quaternionf pose_quat(init_qw, init_qx, init_qy, init_qz);
-    Eigen::Matrix3f rot = pose_quat.toRotationMatrix(); // 	The quaternion is required to be normalized
-    for (int row = 0; row < 3; row++)
-        for (int col = 0; col < 3; col++)
-            InitToGround.at<float>(row, col) = rot(row, col);
-
-    InitToGround.at<float>(0, 3) = init_x;
-    InitToGround.at<float>(1, 3) = init_y;
-    InitToGround.at<float>(2, 3) = init_z;
-
-    Kalib << 529.5000, 0, 365.0000,
-            0, 529.5000, 265.0000,
-            0, 0, 1.0000;// fx fy cx cy
+    Kalib << 718.856,  0,  607.1928,   // for KITTI cabinet data.
+            0,  718.856, 185.2157,
+            0,      0,     1;// fx fy cx cy
 
     detect_cuboid_obj = new detect_3d_cuboid();
     detect_cuboid_obj->print_details = false;
@@ -71,7 +80,11 @@ Tracking::Tracking() {
     Eigen::Quaterniond init_cam_pose_q(init_qw, init_qx, init_qy, init_qz);
     Eigen::Vector3d init_cam_pose_v(init_x, init_y, init_z);
 
-    fixed_init_cam_pose_Twc = g2o::SE3Quat(init_cam_pose_q, init_cam_pose_v);
+    Vector7d cam_pose; cam_pose<< init_x, init_y, init_z, init_qx, init_qy, init_qz, init_qw;//0 0 1.7000000 -0.7071 0 0 0.7071
+//    fixed_init_cam_pose_Twc = g2o::SE3Quat(init_cam_pose_q, init_cam_pose_v);
+    fixed_init_cam_pose_Twc = g2o::SE3Quat(cam_pose);
+    __TRACKING_DEBUG__(cout<< TermColor::iRED()<< "fixed_init_cam_pose_Twc: "  << fixed_init_cam_pose_Twc <<TermColor::RESET() << endl;)
+
 }
 Tracking::~Tracking() {}
 
@@ -286,12 +299,26 @@ double Tracking::computeError(Matrix42d keyframeCoor, Matrix42d frameCoor)
     return sqrt( pow( (d02 - d02_) ,2 ) ) / (d01 + d12 + d23 + d30 + d01_ + d12_ + d23_ + d30_);
 }
 
+#define __TRACKING_CALLBACK_PRINT__(msg) msg;
+void Tracking::frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes msg) {
+    m_buf.lock();
+    __TRACKING_CALLBACK_PRINT__(
+            cout << TermColor::iBLUE() << "[Tracking/frame_bboxes_callback]"
+            << msg.header.stamp << TermColor::RESET() << endl;
+            )
+    frame_bboxes_buf.push(msg);
+    m_buf.unlock();
+    return;
+}
+
 #define __TRACKING_DETECTCUBOID_DEBUG__(msg) msg;
 
 void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' from vins_fusion, also a signal image
 {
     g2o::SE3Quat curr_cam_pose_Twc;
-    g2o::SE3Quat odom_val; // from previous frame to current frame
+    Eigen:Vector3d pan_init;
+    pan_init << 0, 0, 0;
+    g2o::SE3Quat odom_val(Quaterniond(1,0,0,0), pan_init); // from previous frame to current frame
 
 
     if(frame_index == 0)
@@ -325,7 +352,12 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' 
     }
 
     std::vector<Vector4d> good_object_bbox;
-    const int bboxes_length = keyframe_bboxes.bounding_boxes.size();
+    frame_bboxes = frame_bboxes_buf.front();
+    frame_bboxes_buf.pop();
+    __TRACKING_DETECTCUBOID_DEBUG__(
+            cout<< TermColor::iBLUE() << "[Tracking/DetectCuboid]"<< frame_bboxes << TermColor::RESET() << endl;
+            )
+    const int bboxes_length = frame_bboxes.bounding_boxes.size();
     Eigen::Matrix<double, Dynamic, Dynamic> all_object_coor(bboxes_length, 5);
 
     int img_width = raw_rgb_image.cols;
@@ -334,7 +366,7 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' 
     // remove some 2d bboxes too close to boundary
     int boundary_threshold = 20;
     int count = 0;
-    for (auto & bounding_boxes : keyframe_bboxes.bounding_boxes)
+    for (auto & bounding_boxes : frame_bboxes.bounding_boxes)
     {
         int xmin = bounding_boxes.xmin;
         int ymin = bounding_boxes.ymin;
@@ -364,10 +396,28 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' 
     else
         transToWorld = curr_cam_pose_Twc.to_homogeneous_matrix();
 
-    detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, frames_cuboid);
 
-#define DEBUG
-    __TRACKING_DETECTCUBOID_DEBUG__(cout<<"[tracking/DetectCuboid()] detected frames_cuboids size: "<< frames_cuboid.size()<<endl;)
+    __TRACKING_DETECTCUBOID_DEBUG__(
+            cout<<"[tracking/DetectCuboid()] transToWorld: "<< transToWorld<<endl;
+            cout<<"[tracking/DetectCuboid()] all_object_coor: "<< all_object_coor<<endl;
+            //cout<<"[tracking/DetectCuboid()] all_lines_raw: "<< all_lines_raw<<endl;
+            cvNamedWindow("img");
+            cvMoveWindow("img", 20, 300);
+            cv::imshow("img", raw_rgb_image);
+            cv::waitKey(0);
+            cout<< TermColor::iBLUE() << "[tracking/DetectCuboid()] fixed_init_cam_pose_Twc:" << fixed_init_cam_pose_Twc<< TermColor::RESET() << endl;
+    )
+
+    detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, frames_cuboid);
+    currframe->cuboids_2d_img = detect_cuboid_obj->cuboids_2d_img;
+
+    __TRACKING_DETECTCUBOID_DEBUG__(
+            cout<< TermColor::iBLUE()<<"[tracking/DetectCuboid()] detected frames_cuboids size: " << frames_cuboid.size()<< TermColor::RESET() <<endl;
+            cvNamedWindow("currframe.cuboids_2d_img");
+            cvMoveWindow("currframe.cuboids_2d_img", 20, 300);
+            cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
+            cv::waitKey(0);
+    )
     frame_index++;
 
 

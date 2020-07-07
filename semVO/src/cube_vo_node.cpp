@@ -101,6 +101,11 @@ int main(int argc, char** argv)
 //    printf("read sequence: %s\n", argv[2]);
 //    string dataPath = sequence + "/";
 
+     //Bboxes of frame image from darknet_ros yolov3
+    string frame_bboxes_topic = string("/darknet_ros/bounding_boxes");
+    ROS_INFO("[VO] Subscribe to frame_bboxes_topic: %s", frame_bboxes_topic.c_str());
+    ros::Subscriber sub_frame_bboxes = nh.subscribe(frame_bboxes_topic, 1000, &Tracking::frame_bboxes_callback, &tracking);
+
     if(argc != 2){
         printf("please intput: rosrun vins kitti_odom_test [data folder] \n");
         return 1;

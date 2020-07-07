@@ -35,7 +35,7 @@ void DataManager::keyframe_bboxes_callback(const darknet_ros_msgs::BoundingBoxes
     return;
 }
 
-void DataManager::frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes &msg) {
+void DataManager:: frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes &msg) {
     m_buf.lock();
     __DATAMANAGER_CALLBACK_PRINT__(
             cout << TermColor::iBLUE() << "[DataManager/frame_bboxes_callback]"

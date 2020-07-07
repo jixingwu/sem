@@ -67,13 +67,13 @@ public:
 
     double computeError(Matrix42d keyframeCoor, Matrix42d frameCoor);
 
-private:
+//private:
 //    queue<nav_msgs::Odometry> pose_buf = dataManager.getCameraPose();
 //    queue<darknet_ros_msgs::BoundingBoxes> keyframe_bboxes_buf = dataManager.getKeyframeBboxes();
 //    queue<darknet_ros_msgs::BoundingBoxes> frame_bboxes_buf = dataManager.getFrameBboxes();
 //    queue<sensor_msgs::ImageConstPtr> img_buf = dataManager.getFrameImage();
 //    queue<sensor_msgs::ImageConstPtr> keyimg_buf = dataManager.getKeyframeImage();
-    std::mutex m_buf;
+//    std::mutex m_buf;
 
 
 public:
@@ -81,16 +81,10 @@ public:
     Eigen::Matrix3d Kalib;
     detect_3d_cuboid *detect_cuboid_obj;
     double obj_det_2d_thre;
-    darknet_ros_msgs::BoundingBoxes frame_bboxes;
-    darknet_ros_msgs::BoundingBoxes keyframe_bboxes;
     ros::Time img_t;
 
     line_lbd_detect line_lbd_obj;
     std::vector<ObjectSet> frames_cuboid;
-
-    bool whether_save_online_detected_cuboids;
-    bool whether_save_final_optimized_cuboids;
-//    bool has_detected_cuboid;
 
     Eigen::MatrixXd first_truth_frame_pose;
     g2o::SparseOptimizer graph;
@@ -102,6 +96,10 @@ public:
     g2o::VertexCuboid* vCube;
 
     int frame_index = 0;
+    queue<darknet_ros_msgs::BoundingBoxes> frame_bboxes_buf;
+    darknet_ros_msgs::BoundingBoxes frame_bboxes;
+//    darknet_ros_msgs::BoundingBoxes keyframe_bboxes;
+    std::mutex m_buf;
 
 public:
     void Track();// main tracking function. input sensor dataset;
@@ -113,6 +111,7 @@ public:
     visualization_msgs::MarkerArray cuboids_to_marker(cuboid* raw_cuboid, Vector3d rgbcolor);
     void cuboid_corner_to_marker(const Matrix38d& cube_corners, visualization_msgs::Marker& marker, int bodyOrfront);
 
+    void frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes msg);
 
 
 
