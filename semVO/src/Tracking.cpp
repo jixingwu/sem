@@ -59,13 +59,13 @@ Tracking::Tracking() {
     detect_cuboid_obj->print_details = false;
     detect_cuboid_obj->set_calibration(Kalib);
 
-    detect_cuboid_obj->whether_plot_detail_images = false;
+    detect_cuboid_obj->whether_plot_detail_images = true;
     detect_cuboid_obj->whether_plot_final_images = true;
-    detect_cuboid_obj->print_details = false;
+    detect_cuboid_obj->print_details = true;
     detect_cuboid_obj->set_calibration(Kalib);
     detect_cuboid_obj->whether_sample_bbox_height = false;
     detect_cuboid_obj->nominal_skew_ratio = 2;
-    detect_cuboid_obj->whether_save_final_images = false;
+    detect_cuboid_obj->whether_save_final_images = true;
 
     line_lbd_obj.use_LSD = true;
     line_lbd_obj.line_length_thres = 15;
@@ -446,7 +446,7 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image, const darknet_ros_msgs
         count++;
     }
 
-    all_object_coor.resize(5,5);
+//    all_object_coor.resize(5,5);
 
     assert( all_object_coor.size() != 0 && " all_object_corr is empty");
 
