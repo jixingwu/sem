@@ -67,15 +67,6 @@ public:
 
     double computeError(Matrix42d keyframeCoor, Matrix42d frameCoor);
 
-//private:
-//    queue<nav_msgs::Odometry> pose_buf = dataManager.getCameraPose();
-//    queue<darknet_ros_msgs::BoundingBoxes> keyframe_bboxes_buf = dataManager.getKeyframeBboxes();
-//    queue<darknet_ros_msgs::BoundingBoxes> frame_bboxes_buf = dataManager.getFrameBboxes();
-//    queue<sensor_msgs::ImageConstPtr> img_buf = dataManager.getFrameImage();
-//    queue<sensor_msgs::ImageConstPtr> keyimg_buf = dataManager.getKeyframeImage();
-//    std::mutex m_buf;
-
-
 public:
     cv::Mat InitToGround;//    Eigen::Matrix4d cam_transToGround;
     Eigen::Matrix3d Kalib;
@@ -97,22 +88,32 @@ public:
 
     int frame_index = 0;
     queue<darknet_ros_msgs::BoundingBoxes> frame_bboxes_buf;
-    darknet_ros_msgs::BoundingBoxes frame_bboxes;
+//    darknet_ros_msgs::BoundingBoxes frame_bboxes;
 //    darknet_ros_msgs::BoundingBoxes keyframe_bboxes;
+
     std::mutex m_buf;
+    queue<cv::Mat> img_buf;
+
+    ros::Time bboxes_t0;
+    bool bboxes_t0_available = false;
+    bool is_bboxes_t0_available() {return bboxes_t0_available;}
 
 public:
     void Track();// main tracking function. input sensor dataset;
     void CreateNewKeyFrame(cv::Mat img, uint32_t imgID);
-    void DetectCuboid(const cv::Mat& raw_image);
+    void DetectCuboid(const cv::Mat& raw_image,  const darknet_ros_msgs::BoundingBoxes& frame_bboxes);
+    void GenerateCuboid();
     void AssociateCuboid();
     bool MatchCuboid(darknet_ros_msgs::BoundingBoxes keyframe_bboxes, darknet_ros_msgs::BoundingBoxes frame_bboxes);//keyframe_bboxes, frame_bboxes;
     cv::Mat setImageFromMsg(const sensor_msgs::ImageConstPtr msg);
     visualization_msgs::MarkerArray cuboids_to_marker(cuboid* raw_cuboid, Vector3d rgbcolor);
     void cuboid_corner_to_marker(const Matrix38d& cube_corners, visualization_msgs::Marker& marker, int bodyOrfront);
 
-    void frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes msg);
+    void frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes& msg);
+    void detection_image_callback(const sensor_msgs::Image& msg);
+    void left_image_callback(const sensor_msgs::Image& msg);
 
+    bool is_frame_bboxes_empty(){return frame_bboxes_buf.empty();}
 
 
 //    cv::Mat TrackMonocular(const cv::Mat &im, const double &timestamp, int msg_seq_id=-1);// System::

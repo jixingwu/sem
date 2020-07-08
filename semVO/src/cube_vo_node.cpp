@@ -106,49 +106,59 @@ int main(int argc, char** argv)
     ROS_INFO("[VO] Subscribe to frame_bboxes_topic: %s", frame_bboxes_topic.c_str());
     ros::Subscriber sub_frame_bboxes = nh.subscribe(frame_bboxes_topic, 1000, &Tracking::frame_bboxes_callback, &tracking);
 
-    if(argc != 2){
-        printf("please intput: rosrun vins kitti_odom_test [data folder] \n");
-        return 1;
-    }
-    string sequence = argv[1];
-    printf("read sequence: %s\n", argv[1]);
-    string dataPath = sequence + "/";
+    string detection_image_topic = string("/darknet_ros/detection_image");
+    ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());
+    ros::Subscriber sub_detection_image = nh.subscribe(detection_image_topic, 1000, &Tracking::detection_image_callback, &tracking);
 
-    // load image list
-    FILE* file;
-    file = std::fopen((dataPath + "times.txt").c_str(), "r");
-    if(file == NULL)
-    {
-        printf("cannot find file: %stimes.txt\n", dataPath.c_str());
-        ROS_BREAK();
-        return 0;
-    }
-    double imageTime;
-    vector<double> imageTimeList;
-    while ( fscanf(file, "%lf", &imageTime) != EOF)
-    {
-        imageTimeList.push_back(imageTime);
-    }
-    std::fclose(file);
+    string left_image_topic = string("/leftImage");
+    ROS_INFO("[VO] Subscribe to left_image_topic: %s", left_image_topic.c_str());
+    ros::Subscriber sub_left_image = nh.subscribe(left_image_topic, 1000, &Tracking::left_image_callback, &tracking);
 
-    string leftImagePath, rightImagePath;
-    cv::Mat imLeft, imRight;
 
-    for (std::size_t i = 0; i < imageTimeList.size(); ++i) {
-        if(ros::ok())
-        {
-            printf("\n process image %d\n", (int)i);
-            stringstream ss;
-            ss << setfill('0') << setw(6) << i;
-            leftImagePath = dataPath + "image_0/" + ss.str() + ".png";
+//    if(argc != 2){
+//        printf("please intput: rosrun vins kitti_odom_test [data folder] \n");
+//        return 1;
+//    }
+//    string sequence = argv[1];
+//    printf("read sequence: %s\n", argv[1]);
+//    string dataPath = sequence + "/";
+//
+//    // load image list
+//    FILE* file;
+//    file = std::fopen((dataPath + "times.txt").c_str(), "r");
+//    if(file == NULL)
+//    {
+//        printf("cannot find file: %stimes.txt\n", dataPath.c_str());
+//        ROS_BREAK();
+//        return 0;
+//    }
+//    double imageTime;
+//    vector<double> imageTimeList;
+//    while ( fscanf(file, "%lf", &imageTime) != EOF)
+//    {
+//        imageTimeList.push_back(imageTime);
+//    }
+//    std::fclose(file);
+//
+//    string leftImagePath, rightImagePath;
+//    cv::Mat imLeft, imRight;
+//        for (std::size_t i = 0; i < imageTimeList.size(); ++i) {
+//            if(ros::ok())
+//            {
+//                printf("\n process image %d\n", (int)i);
+//                stringstream ss;
+//                ss << setfill('0') << setw(6) << i;
+//                leftImagePath = dataPath + "image_0/" + ss.str() + ".png";
+//
+//                imLeft = cv::imread(leftImagePath, CV_LOAD_IMAGE_GRAYSCALE);
+//
+//                tracking.DetectCuboid(imLeft);
+//            }
+//            else
+//                break;
+//        }
+//
 
-            imLeft = cv::imread(leftImagePath, CV_LOAD_IMAGE_GRAYSCALE);
-
-            tracking.DetectCuboid(imLeft);
-        }
-        else
-            break;
-    }
 
 
 
@@ -156,6 +166,8 @@ int main(int argc, char** argv)
 #ifdef DEBUG
     printf("[VO] Subscriber Finished!\n");
 #endif
+
+    ros::spin();
 
     return 0;
 }

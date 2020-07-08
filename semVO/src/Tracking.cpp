@@ -17,7 +17,9 @@ using namespace std;
 using namespace Eigen;
 
 typedef Matrix<double, 7, 1> Vector7d;
-#define __TRACKING_DEBUG__(msg) msg;
+typedef Matrix<double, 5, 1> Vector5d;
+//#define __TRACKING_DEBUG__(msg) msg;
+#define __TRACKING_DEBUG__(msg);
 Tracking::Tracking() {
 
 //    InitToGround = cv::Mat::eye(4, 4, CV_32F);
@@ -58,7 +60,7 @@ Tracking::Tracking() {
     detect_cuboid_obj->set_calibration(Kalib);
 
     detect_cuboid_obj->whether_plot_detail_images = false;
-    detect_cuboid_obj->whether_plot_final_images = false;
+    detect_cuboid_obj->whether_plot_final_images = true;
     detect_cuboid_obj->print_details = false;
     detect_cuboid_obj->set_calibration(Kalib);
     detect_cuboid_obj->whether_sample_bbox_height = false;
@@ -300,20 +302,73 @@ double Tracking::computeError(Matrix42d keyframeCoor, Matrix42d frameCoor)
 }
 
 #define __TRACKING_CALLBACK_PRINT__(msg) msg;
-void Tracking::frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes msg) {
-    m_buf.lock();
+void Tracking::frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes& msg) {
+    if(bboxes_t0_available == false)
+    {
+        bboxes_t0 = msg.header.stamp;
+        bboxes_t0_available = true;
+    }
+
     __TRACKING_CALLBACK_PRINT__(
-            cout << TermColor::iBLUE() << "[Tracking/frame_bboxes_callback]"
-            << msg.header.stamp << TermColor::RESET() << endl;
+            cout << TermColor::iBLUE() << "[Tracking/frame_bboxes_callback] frame_bboxes t= "
+            << msg.header.stamp - bboxes_t0 << TermColor::RESET() << endl;
             )
-    frame_bboxes_buf.push(msg);
-    m_buf.unlock();
+//    m_buf.lock();
+//    frame_bboxes_buf.push(msg);
+//    m_buf.unlock();
+    if(!img_buf.empty()){
+        cv::Mat image = img_buf.front();
+        img_buf.pop();
+        DetectCuboid(image, msg);
+    }
+
+
     return;
 }
 
+void Tracking::detection_image_callback(const sensor_msgs::Image &msg) {
+    __TRACKING_CALLBACK_PRINT__(
+            cout << TermColor::iGREEN() << "[Tracking/detection_image_callback] detection_image t= "
+                 << msg.header.stamp - bboxes_t0 << TermColor::RESET() << endl;
+    )
+    return;
+}
+
+void Tracking::left_image_callback(const sensor_msgs::Image& msg){
+
+    __TRACKING_CALLBACK_PRINT__(
+            cout<< TermColor::iBLUE() << "[Tracking/left_image_callback] image t= "
+            << msg.header.stamp - bboxes_t0 << TermColor::RESET() << endl;
+            )
+    cv_bridge::CvImagePtr cv_ptr;
+    if(msg.encoding == "8UC1"){
+        sensor_msgs::Image img;
+        img.header = msg.header;
+        img.height = msg.height;
+        img.width = msg.width;
+        img.is_bigendian = msg.is_bigendian;
+        img.step = msg.step;
+        img.data = msg.data;
+        img.encoding = "mono8";
+        cv_ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
+    }
+    else
+        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
+    cv::Mat img = cv_ptr->image.clone();
+    m_buf.lock();
+    img_buf.push(img);
+    m_buf.unlock();
+
+    return;
+}
+
+//void Tracking::GenerateCuboid() {
+//    cv::Mat img;
+//}
+
 #define __TRACKING_DETECTCUBOID_DEBUG__(msg) msg;
 
-void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' from vins_fusion, also a signal image
+void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image, const darknet_ros_msgs::BoundingBoxes& frame_bboxes)// get 'Keyframe *pKF' from vins_fusion, also a signal image
 {
     g2o::SE3Quat curr_cam_pose_Twc;
     Eigen:Vector3d pan_init;
@@ -351,11 +406,13 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' 
         }
     }
 
+    assert( all_lines_raw.size() != 0 && "Eigen all_lines_raw is empty");
+
     std::vector<Vector4d> good_object_bbox;
-    frame_bboxes = frame_bboxes_buf.front();
-    frame_bboxes_buf.pop();
+//    frame_bboxes = frame_bboxes_buf.front();
+//    frame_bboxes_buf.pop();
     __TRACKING_DETECTCUBOID_DEBUG__(
-            cout<< TermColor::iBLUE() << "[Tracking/DetectCuboid]"<< frame_bboxes << TermColor::RESET() << endl;
+            cout<< TermColor::iBLUE() << "[Tracking/DetectCuboid] frame_bboxes size: "<< frame_bboxes.bounding_boxes.size() << TermColor::RESET() << endl;
             )
     const int bboxes_length = frame_bboxes.bounding_boxes.size();
     Eigen::Matrix<double, Dynamic, Dynamic> all_object_coor(bboxes_length, 5);
@@ -376,7 +433,7 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' 
         int width = xmax - xmin;
         int length = ymax - ymin;
 
-        Vector4d object_bbox;
+        Vector5d object_bbox;
         object_bbox << xmin, ymin, width, length, prob;//01234
 
         if((object_bbox(0) < boundary_threshold) || (object_bbox(0) + object_bbox(2) > img_width - boundary_threshold)
@@ -389,6 +446,10 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' 
         count++;
     }
 
+    all_object_coor.resize(5,5);
+
+    assert( all_object_coor.size() != 0 && " all_object_corr is empty");
+
     Matrix4d transToWorld;
     detect_cuboid_obj->whether_sample_cam_roll_pitch = (frame_index!=0);
     if(detect_cuboid_obj->whether_sample_cam_roll_pitch)
@@ -398,16 +459,29 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image)// get 'Keyframe *pKF' 
 
 
     __TRACKING_DETECTCUBOID_DEBUG__(
-            cout<<"[tracking/DetectCuboid()] transToWorld: "<< transToWorld<<endl;
-            cout<<"[tracking/DetectCuboid()] all_object_coor: "<< all_object_coor<<endl;
+            cout<< TermColor::iBLUE() <<"[tracking/DetectCuboid()] transToWorld: "<< transToWorld<< TermColor::RESET() <<endl;
+            cout<<"[tracking/DetectCuboid()] all_object_coor: "<< all_object_coor.size()<<endl;
             //cout<<"[tracking/DetectCuboid()] all_lines_raw: "<< all_lines_raw<<endl;
-            cvNamedWindow("img");
-            cvMoveWindow("img", 20, 300);
-            cv::imshow("img", raw_rgb_image);
-            cv::waitKey(0);
+//            cvNamedWindow("img");
+//            cvMoveWindow("img", 20, 300);
+//            cv::imshow("img", raw_rgb_image);
+//            cv::waitKey(0);
             cout<< TermColor::iBLUE() << "[tracking/DetectCuboid()] fixed_init_cam_pose_Twc:" << fixed_init_cam_pose_Twc<< TermColor::RESET() << endl;
     )
 
+    assert(all_object_coor.size() != 0 && "bboxes_buf is empty");
+
+    __TRACKING_DETECTCUBOID_DEBUG__(
+            cout<< TermColor::iRED()
+            << "[Tracking/DetectCuboid] raw_rgb_image.width: " << raw_rgb_image.cols << endl
+            << "transToWorld: "<< transToWorld <<endl
+            << "all_object_coor.size: "<<all_object_coor.size()<< endl
+            << "all_lines_raw.size: " << all_lines_raw.size()<< TermColor::RESET() << endl;
+            cvNamedWindow("raw_rgb_image");
+            cvMoveWindow("raw_rgb_image", 20, 300);
+            cv::imshow("raw_rgb_image",raw_rgb_image);
+            cv::waitKey(0);
+            )
     detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, frames_cuboid);
     currframe->cuboids_2d_img = detect_cuboid_obj->cuboids_2d_img;
 
