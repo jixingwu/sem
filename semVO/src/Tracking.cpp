@@ -59,9 +59,9 @@ Tracking::Tracking() {
     detect_cuboid_obj->print_details = false;
     detect_cuboid_obj->set_calibration(Kalib);
 
-    detect_cuboid_obj->whether_plot_detail_images = true;
-    detect_cuboid_obj->whether_plot_final_images = true;
-    detect_cuboid_obj->print_details = true;
+    detect_cuboid_obj->whether_plot_detail_images = false;
+    detect_cuboid_obj->whether_plot_final_images = false;
+    detect_cuboid_obj->print_details = false;
     detect_cuboid_obj->set_calibration(Kalib);
     detect_cuboid_obj->whether_sample_bbox_height = false;
     detect_cuboid_obj->nominal_skew_ratio = 2;
@@ -349,11 +349,11 @@ void Tracking::left_image_callback(const sensor_msgs::Image& msg){
         img.is_bigendian = msg.is_bigendian;
         img.step = msg.step;
         img.data = msg.data;
-        img.encoding = "mono8";
-        cv_ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
+        img.encoding = "BGR8";
+        cv_ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::BGR8);
     }
     else
-        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
+        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
     cv::Mat img = cv_ptr->image.clone();
     m_buf.lock();
     img_buf.push(img);
@@ -477,20 +477,21 @@ void Tracking::DetectCuboid(const cv::Mat& raw_rgb_image, const darknet_ros_msgs
             << "transToWorld: "<< transToWorld <<endl
             << "all_object_coor.size: "<<all_object_coor.size()<< endl
             << "all_lines_raw.size: " << all_lines_raw.size()<< TermColor::RESET() << endl;
-            cvNamedWindow("raw_rgb_image");
-            cvMoveWindow("raw_rgb_image", 20, 300);
-            cv::imshow("raw_rgb_image",raw_rgb_image);
-            cv::waitKey(0);
+
             )
     detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, frames_cuboid);
     currframe->cuboids_2d_img = detect_cuboid_obj->cuboids_2d_img;
 
     __TRACKING_DETECTCUBOID_DEBUG__(
             cout<< TermColor::iBLUE()<<"[tracking/DetectCuboid()] detected frames_cuboids size: " << frames_cuboid.size()<< TermColor::RESET() <<endl;
+            cvNamedWindow("raw_rgb_image");
+            cvMoveWindow("raw_rgb_image", 20, 300);
+            cv::imshow("raw_rgb_image",raw_rgb_image);
+
             cvNamedWindow("currframe.cuboids_2d_img");
             cvMoveWindow("currframe.cuboids_2d_img", 20, 300);
             cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
-            cv::waitKey(0);
+            cv::waitKey(2);
     )
     frame_index++;
 

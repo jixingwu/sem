@@ -110,7 +110,7 @@ int main(int argc, char** argv)
     ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());
     ros::Subscriber sub_detection_image = nh.subscribe(detection_image_topic, 1000, &Tracking::detection_image_callback, &tracking);
 
-    string left_image_topic = string("/leftImage");
+    string left_image_topic = string("/leftRGBImage");
     ROS_INFO("[VO] Subscribe to left_image_topic: %s", left_image_topic.c_str());
     ros::Subscriber sub_left_image = nh.subscribe(left_image_topic, 1000, &Tracking::left_image_callback, &tracking);
 
