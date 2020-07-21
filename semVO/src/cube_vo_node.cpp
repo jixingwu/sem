@@ -5,26 +5,107 @@
  *******************************************************/
 
 #include <iostream>
-#include <stdio.h>
-#include <opencv2/opencv.hpp>
+#include <queue>
+#include <thread>
+#include <mutex>
 #include <cmath>
 #include <string>
 #include <ros/ros.h>
+// sync time
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <boost/bind.hpp>
+
+#include <opencv2/opencv.hpp>
 #include <sensor_msgs/Image.h>
 #include <cv_bridge/cv_bridge.h>
 #include "landmark.h"
-#include "Tracking.h"
+#include "feature_tracker.h"
 #include "DataManager.h"
 #include "Frame.h"
-
-
-#define DEBUG
+#include "estimator.h"
+#include "visual_odometry.h"
 
 using namespace std;
 using namespace Eigen;
 
-//Estimator estimator;
 
+//Estimator estimator;
+VisualOdometry::Ptr vo(new VisualOdometry);
+Camera::Ptr camera(new Camera);
+
+queue<darknet_ros_msgs::BoundingBoxes> frame_bboxes_buf;
+queue<sensor_msgs::Image> img_buf;
+std::mutex m_buf;
+
+#define __DEBUG__(msg) msg;
+void left_image_callback(const sensor_msgs::Image& msg){
+    m_buf.lock();
+    img_buf.push(msg);
+    m_buf.unlock();
+}
+
+void frame_bboxes_callback(const darknet_ros_msgs::BoundingBoxes& msg){
+    m_buf.lock();
+    frame_bboxes_buf.push(msg);
+    m_buf.unlock();
+}
+
+cv::Mat getImageFromMsg(const sensor_msgs::Image &msg){
+    cv_bridge::CvImagePtr cv_ptr;
+    if(msg.encoding == "8UC1"){
+        sensor_msgs::Image img;
+        img.header = msg.header;
+        img.height = msg.height;
+        img.width = msg.width;
+        img.is_bigendian = msg.is_bigendian;
+        img.step = msg.step;
+        img.data = msg.data;
+        img.encoding = "BGR8";
+        cv_ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::BGR8);
+    }
+    else
+        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+    cv::Mat img = cv_ptr->image.clone();
+    return img;
+}
+
+void image_frame_bboxes_callback(const sensor_msgs::Image image, const darknet_ros_msgs::BoundingBoxes frame_bboxes)
+{
+
+}
+
+void sync_process()
+{
+    while(ros::ok())
+    {
+        cv::Mat image; darknet_ros_msgs::BoundingBoxes frame_bboxes;
+        std_msgs::Header image_header, frame_bboxes_header;
+        double image_time = 0, frame_bboxes_time = 0;
+        m_buf.lock();
+        if(!img_buf.empty() && !frame_bboxes_buf.empty())
+        {
+            vo->checkImageAndBboxesAligned(img_buf, frame_bboxes_buf.front()));
+
+
+            image_time = img_buf.front().header.stamp.toSec();
+            image_header = img_buf.front().header;
+            image = getImageFromMsg(img_buf.front());
+            img_buf.pop();
+            if(!image.empty())
+                estimator.inputImage(image_time, image);
+            frame_bboxes_time = frame_bboxes_buf.front().header.stamp.toSec();
+            frame_bboxes_header = frame_bboxes_buf.front().header;
+            frame_bboxes = frame_bboxes_buf.front();
+            frame_bboxes_buf.pop();
+            if(!frame_bboxes_buf.front().bounding_boxes.empty())
+                estimator.inputFrameBboxes(frame_bboxes_time, frame_bboxes);
+        }
+        m_buf.unlock();
+        std::chrono::milliseconds dura(2);
+        std::this_thread::sleep_for(dura);
+    }
+}
 
 int main(int argc, char** argv)
 {
@@ -36,8 +117,8 @@ int main(int argc, char** argv)
     ros::NodeHandle nh("~");
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
 
-    Landmark landmark;
-    Tracking tracking;
+//    Landmark landmark;
+
 
 //    DataManager dataManager;
 //
@@ -104,64 +185,26 @@ int main(int argc, char** argv)
      //Bboxes of frame image from darknet_ros yolov3
     string frame_bboxes_topic = string("/darknet_ros/bounding_boxes");
     ROS_INFO("[VO] Subscribe to frame_bboxes_topic: %s", frame_bboxes_topic.c_str());
-    ros::Subscriber sub_frame_bboxes = nh.subscribe(frame_bboxes_topic, 1000, &Tracking::frame_bboxes_callback, &tracking);
+    ros::Subscriber sub_frame_bboxes = nh.subscribe(frame_bboxes_topic, 1000, frame_bboxes_callback);
 
-    string detection_image_topic = string("/darknet_ros/detection_image");
-    ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());
-    ros::Subscriber sub_detection_image = nh.subscribe(detection_image_topic, 1000, &Tracking::detection_image_callback, &tracking);
+//    string detection_image_topic = string("/darknet_ros/detection_image");
+//    ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());
+//    ros::Subscriber sub_detection_image = nh.subscribe(detection_image_topic, 1000, &feature_tracker::detection_image_callback, &tracking);
 
     string left_image_topic = string("/leftRGBImage");
     ROS_INFO("[VO] Subscribe to left_image_topic: %s", left_image_topic.c_str());
-    ros::Subscriber sub_left_image = nh.subscribe(left_image_topic, 1000, &Tracking::left_image_callback, &tracking);
+    ros::Subscriber sub_left_image = nh.subscribe(left_image_topic, 1000, left_image_callback);
+
+    //// synchronize image and bboxes time
+    message_filters::Subscriber<sensor_msgs::Image> image_sub(nh, "/leftRGBImage", 1000);
+    message_filters::Subscriber<darknet_ros_msgs::BoundingBoxes> frame_bboxes_sub(nh, "/darknet_ros/bounding_boxes", 1000);
+    message_filters::TimeSynchronizer<sensor_msgs::Image, darknet_ros_msgs::BoundingBoxes> sync(image_sub, frame_bboxes_sub, 10);
+    sync.registerCallback(boost::bind(&image_frame_bboxes_callback, _1, _2));
 
 
-//    if(argc != 2){
-//        printf("please intput: rosrun vins kitti_odom_test [data folder] \n");
-//        return 1;
-//    }
-//    string sequence = argv[1];
-//    printf("read sequence: %s\n", argv[1]);
-//    string dataPath = sequence + "/";
-//
-//    // load image list
-//    FILE* file;
-//    file = std::fopen((dataPath + "times.txt").c_str(), "r");
-//    if(file == NULL)
-//    {
-//        printf("cannot find file: %stimes.txt\n", dataPath.c_str());
-//        ROS_BREAK();
-//        return 0;
-//    }
-//    double imageTime;
-//    vector<double> imageTimeList;
-//    while ( fscanf(file, "%lf", &imageTime) != EOF)
-//    {
-//        imageTimeList.push_back(imageTime);
-//    }
-//    std::fclose(file);
-//
-//    string leftImagePath, rightImagePath;
-//    cv::Mat imLeft, imRight;
-//        for (std::size_t i = 0; i < imageTimeList.size(); ++i) {
-//            if(ros::ok())
-//            {
-//                printf("\n process image %d\n", (int)i);
-//                stringstream ss;
-//                ss << setfill('0') << setw(6) << i;
-//                leftImagePath = dataPath + "image_0/" + ss.str() + ".png";
-//
-//                imLeft = cv::imread(leftImagePath, CV_LOAD_IMAGE_GRAYSCALE);
-//
-//                tracking.DetectCuboid(imLeft);
-//            }
-//            else
-//                break;
-//        }
-//
+    std::thread sync_thread{sync_process};
 
-
-
-
+//    tracking.startingDetectCuboid();
 
 #ifdef DEBUG
     printf("[VO] Subscriber Finished!\n");
