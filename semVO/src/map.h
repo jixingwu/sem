@@ -7,14 +7,14 @@
 #include "frame.h"
 #include "mapcube.h"
 
-class Map
+class MapObject
 {
 public:
-    typedef shared_ptr<Map> Ptr;
+    typedef shared_ptr<MapObject> Ptr;
     map<unsigned long, MapCube::Ptr> map_cubes_;// all landmarks
     map<unsigned long, Frame::Ptr>   keyframes_;   // all frames
 
-    Map(){}
+    MapObject(){}
 
     void insertKeyFrame(Frame::Ptr frame);
     void insertMapCube(MapCube::Ptr map_cube);

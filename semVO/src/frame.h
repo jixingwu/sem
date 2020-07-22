@@ -14,9 +14,13 @@ public:
     typedef std::shared_ptr<Frame> Ptr;
     unsigned long   id_;  // id of this frame
     double          time_stamp_; // when it is recorded
-    SE3             T_c_w; // transform from world to camera
+    SE3             T_c_w_; // transform from world to camera
     Camera::Ptr     camera_;
-    Mat             color_, depth_; // color and depth image
+    bool            is_key_frame_;
+
+    /// image and bboxes timestamp have been aligned
+    cv::Mat rgb_image_;
+    darknet_ros_msgs::BoundingBoxes bboxes_;
 
     // cube parameter
     int                             cube_num_; // cube number of this frame
@@ -34,6 +38,11 @@ public:
     Vector3d getCamCenter() const;
 
     bool isInFrame();
+
+    void setPose( const SE3& T_c_w);
+
+    // check if a point is in this frame
+    bool isInFrame( const Vector3d& pt_world);
 };
 
 #endif //SRC_FRAME_H
