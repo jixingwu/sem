@@ -3,6 +3,7 @@
 //
 
 #include "visual_odometry.h"
+#include "config.h"
 
 typedef Eigen::Matrix<double, 7, 1> Vector7d;
 typedef Eigen::Matrix<double, 5, 1> Vector5d;
@@ -13,7 +14,43 @@ typedef Eigen::Matrix<double, 5, 1> Vector5d;
 
 VisualOdometry::VisualOdometry():
 state_(INITIALIZING), ref_(nullptr), curr_(nullptr), map_(new MapObject), num_inliers_(0), num_lost_(0)
-{}
+{
+    // 创建vo对象后就把generate cube的参数设置完成
+    // set initial camera pose wrt ground. by default camera parallel to ground, height=1.7 (kitti)
+    Eigen::Quaterniond init_q; Eigen::Vector3d init_t;
+    init_q.x() = Config::get<double>("init.qx");
+    init_q.y() = Config::get<double>("init.qy");
+    init_q.z() = Config::get<double>("init.qz");
+    init_q.w() = Config::get<double>("init.qw");
+    init_t.x() = Config::get<double>("init.x");
+    init_t.y() = Config::get<double>("init.y");
+    init_t.z() = Config::get<double>("init.z");
+
+    detect_cuboid_obj = new detect_3d_cuboid();
+    detect_cuboid_obj->whether_plot_detail_images = false;
+    detect_cuboid_obj->whether_plot_final_images = false;
+    detect_cuboid_obj->print_details = false;
+    detect_cuboid_obj->whether_sample_bbox_height = false;
+    detect_cuboid_obj->nominal_skew_ratio = 2;
+    detect_cuboid_obj->whether_save_final_images = true;
+
+    line_lbd_obj.use_LSD = true;
+    line_lbd_obj.line_length_thres = 15;
+
+    // graph optimization
+    g2o::BlockSolverX::LinearSolverType* linearSolver;
+    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
+    g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
+    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
+    graph.setAlgorithm(solver);    graph.setVerbose(false);
+
+    Eigen::Quaterniond init_cam_pose_q(init_q.w(), init_q.x(), init_q.y(), init_q.z());
+    Eigen::Vector3d init_cam_pose_v(init_t.x(), init_t.y(), init_t.z());
+
+    Vector7d cam_pose; cam_pose<< init_t.x(), init_t.y(), init_t.z(), init_q.x(), init_q.y(), init_q.z(), init_q.w();//0 0 1.7000000 -0.7071 0 0 0.7071
+    fixed_init_cam_pose_Twc = g2o::SE3Quat(cam_pose);
+    __DEBUG__(cout<< TermColor::iRED()<< "fixed_init_cam_pose_Twc: "  << fixed_init_cam_pose_Twc <<TermColor::RESET() << endl;)
+}
 VisualOdometry::~VisualOdometry() {}
 
 bool VisualOdometry::addFrame(Frame::Ptr frame)
@@ -25,10 +62,20 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
             curr_ = ref_ = frame;
             // extract features from first frame and add them into mat
 //            generateCubeProposal(frame->rgb_image_, frame->bboxes_);
+            generateCubeProposal();// OUTPUT: frame_cuboids as a 'vector<ObjectSet>' type
+            cubeProposalScoring(); // update frame_cuboids
+            addKeyFrame();
+            break;
         }
         case OK:
         {
-
+            curr_ = frame;
+            curr_->T_c_w_ = ref_->T_c_w_;//讲当前帧pose设置为上一帧pose
+            generateCubeProposal();
+            cubeProposalScoring();
+            // TODO:估计相机pose, 将vins的camera pose与initTransToWorld相乘；// 无需估计vins会pub
+            // TODO: check camera pose
+            // if true, 更新当前帧的pose. if else state_ = LOST;
         }
         case LOST:
         {
@@ -41,44 +88,7 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
 #define __DEBUG__(msg) msg;
 void VisualOdometry::setGenerateCubeParameter()
 {
-    // set initial camera pose wrt ground. by default camera parallel to ground, height=1.7 (kitti)
-    double init_x, init_y, init_z, init_qx, init_qy, init_qz, init_qw;
-    init_x = 0; init_y = 0, init_z = 1.7, init_qx = -0.7071, init_qy = 0, init_qz = 0, init_qw = 0.7071;
 
-    Eigen::Matrix3d Kalib;
-    Kalib << 718.856,  0,  607.1928,   // for KITTI cabinet data.
-            0,  718.856, 185.2157,
-            0,      0,     1;// fx fy cx cy
-
-    detect_cuboid_obj = new detect_3d_cuboid();
-    detect_cuboid_obj->print_details = false;
-    detect_cuboid_obj->set_calibration(Kalib);
-
-    detect_cuboid_obj->whether_plot_detail_images = false;
-    detect_cuboid_obj->whether_plot_final_images = false;
-    detect_cuboid_obj->print_details = false;
-    detect_cuboid_obj->set_calibration(Kalib);
-    detect_cuboid_obj->whether_sample_bbox_height = false;
-    detect_cuboid_obj->nominal_skew_ratio = 2;
-    detect_cuboid_obj->whether_save_final_images = true;
-
-    line_lbd_obj.use_LSD = true;
-    line_lbd_obj.line_length_thres = 15;
-
-    // graph optimization
-
-    g2o::BlockSolverX::LinearSolverType* linearSolver;
-    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
-    g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
-    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    graph.setAlgorithm(solver);    graph.setVerbose(false);
-
-    Eigen::Quaterniond init_cam_pose_q(init_qw, init_qx, init_qy, init_qz);
-    Eigen::Vector3d init_cam_pose_v(init_x, init_y, init_z);
-
-    Vector7d cam_pose; cam_pose<< init_x, init_y, init_z, init_qx, init_qy, init_qz, init_qw;//0 0 1.7000000 -0.7071 0 0 0.7071
-    fixed_init_cam_pose_Twc = g2o::SE3Quat(cam_pose);
-    __DEBUG__(cout<< TermColor::iRED()<< "fixed_init_cam_pose_Twc: "  << fixed_init_cam_pose_Twc <<TermColor::RESET() << endl;)
 
 }
 
@@ -92,6 +102,12 @@ void VisualOdometry::generateCubeProposal()
     pan_init << 0, 0, 0;
     g2o::SE3Quat odom_val(Quaterniond(1,0,0,0), pan_init); // from previous frame to current frame
 
+    Eigen::Matrix3d Kalib;
+    Kalib <<ref_->camera_->fx_,  0,  ref_->camera_->cx_,   // for KITTI cabinet data.
+            0,  ref_->camera_->fy_, ref_->camera_->cy_,
+            0,      0,     1;// fx fy cx cy
+
+    detect_cuboid_obj->set_calibration(Kalib);
 
     if(frame_index == 0)
         curr_cam_pose_Twc = fixed_init_cam_pose_Twc;
