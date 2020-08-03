@@ -7,6 +7,8 @@
 
 #include "camera.h"
 #include "Object_landmark.h"
+#include "detect_3d_cuboid/detect_3d_cuboid.h"
+#include "darknet_ros_msgs/BoundingBoxes.h"
 class MapCube;
 class Frame
 {
@@ -20,10 +22,11 @@ public:
 
     /// image and bboxes timestamp have been aligned
     cv::Mat rgb_image_;
-    darknet_ros_msgs::BoundingBoxes bboxes_;
+    darknet_ros_msgs::BoundingBoxesConstPtr bboxes_;
 
     // cube parameter
     int                             cube_num_; // cube number of this frame
+    std::vector<ObjectSet>          frame_cuboids_;// cube sequence of this frame
     std::vector<object_landmark*>   observed_cuboids_;// cube sequence of this frame
 
 public:

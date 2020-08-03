@@ -24,7 +24,6 @@
 #include "detect_3d_cuboid/detect_3d_cuboid.h"
 #include "detect_3d_cuboid/object_3d_util.h"
 #include "line_lbd/line_lbd_allclass.h"
-#include "Object_landmark.h"
 
 #include "GraphMatching.h"
 #include "DataManager.h"
@@ -65,11 +64,12 @@ public:
     // set cube class and queue parameter
     detect_3d_cuboid *detect_cuboid_obj;
     line_lbd_detect line_lbd_obj;
-    std::vector<ObjectSet> frames_cuboid;
     g2o::SE3Quat fixed_init_cam_pose_Twc;
     vector<tracking_frame*> all_frames;
     int frame_index = 0;
     g2o::SparseOptimizer graph;
+
+    SE3 InitToGround;
 
 
 public:
@@ -84,7 +84,7 @@ public:
     void inputBboxes(const darknet_ros_msgs::BoundingBoxes);
 
     void setGenerateCubeParameter();
-    void generateCubeProposal(const cv::Mat& raw_image,  const darknet_ros_msgs::BoundingBoxes& frame_bboxes);
+//    void generateCubeProposal(const cv::Mat& raw_image,  const darknet_ros_msgs::BoundingBoxes& frame_bboxes);
     void generateCubeProposal();
     void cubeProposalScoring();
 
