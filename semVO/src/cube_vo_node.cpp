@@ -11,6 +11,7 @@
 #include <cmath>
 #include <string>
 #include <ros/ros.h>
+#include <ros/console.h>// import ROS_DEBUG(), ROS_DEBUG_ONCE() etc.
 // sync time
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
@@ -62,6 +63,7 @@ void pose_callback(const nav_msgs::OdometryConstPtr &pose_msg)
 {
     m_buf.lock();
     pose_buf.push(pose_msg);
+//    cout<<TermColor::iGREEN()<<"pose_msgs: "<<pose_msg->header.stamp<<TermColor::RESET()<<endl;
     m_buf.unlock();
 }
 
@@ -97,44 +99,77 @@ void sync_process()
         std_msgs::Header image_header, frame_bboxes_header;
         double image_time = 0, frame_bboxes_time = 0;
         m_buf.lock();
-        __DEBUG__(cout<<img0_buf.size()<<"\t"<<frame_bboxes_buf.size()<<"\t"<<pose_buf.size()<<endl;)
+
         if(!img0_buf.empty() && !frame_bboxes_buf.empty() && !pose_buf.empty())
         {
-            ROS_INFO("------ received -------");
-            image_time = img0_buf.front()->header.stamp.toSec();
-            image_header = img0_buf.front()->header;
-            image = getImageFromMsg(img0_buf.front());
-            img0_buf.pop();
-
-            frame_bboxes_time = frame_bboxes_buf.front()->header.stamp.toSec();
-            frame_bboxes_header = frame_bboxes_buf.front()->header;
-            frame_bboxes = frame_bboxes_buf.front();
-            frame_bboxes_buf.pop();
-
-            pose = pose_buf.front();
-            if(!pose->header.frame_id.empty())
+            ROS_DEBUG_ONCE("------ received console msgs-------");
+            if (img0_buf.front()->header.stamp < pose_buf.front()->header.stamp)
             {
-                t.x() = pose->pose.pose.position.x; t.y() = pose->pose.pose.position.y; t.z() = pose->pose.pose.position.z;
-                q.x() = pose->pose.pose.orientation.x; q.y() = pose->pose.pose.orientation.y; q.z() = pose->pose.pose.orientation.z; q.w() = pose->pose.pose.orientation.w;
-                pose_buf.pop();
+                ROS_WARN("this image is not inited!! ");
+                img0_buf.pop();
+//                continue;
+            }
+            else if(img0_buf.front()->header.stamp > pose_buf.front()->header.stamp)
+            {
+                ROS_ERROR("not initialization!!");
+                ros::shutdown();
+            }
+            else if(img0_buf.front()->header.stamp == pose_buf.front()->header.stamp)
+            {
+                ROS_INFO("image stamp is equal to pose!!!");
+                if(img0_buf.front()->header.stamp == frame_bboxes_buf.front()->image_header.stamp)
+                {
+                    ROS_INFO("image stamp is equal to bboxes!!!");
+                    image_time = img0_buf.front()->header.stamp.toSec();
+                    image_header = img0_buf.front()->header;
+                    image = getImageFromMsg(img0_buf.front());
+                    img0_buf.pop();
+
+                    frame_bboxes_time = frame_bboxes_buf.front()->header.stamp.toSec();
+                    frame_bboxes_header = frame_bboxes_buf.front()->header;
+                    frame_bboxes = frame_bboxes_buf.front();
+                    frame_bboxes_buf.pop();
+
+                    pose = pose_buf.front();
+                    if(!pose->header.frame_id.empty())
+                    {
+                        t.x() = pose->pose.pose.position.x; t.y() = pose->pose.pose.position.y; t.z() = pose->pose.pose.position.z;
+                        q.x() = pose->pose.pose.orientation.x; q.y() = pose->pose.pose.orientation.y; q.z() = pose->pose.pose.orientation.z; q.w() = pose->pose.pose.orientation.w;
+                        pose_buf.pop();
+                    }
+
+                    Frame::Ptr pFrame = Frame::createFrame();
+                    pFrame->time_stamp_ = image_time;
+                    pFrame->rgb_image_ = image;
+                    pFrame->bboxes_ = frame_bboxes;
+                    pFrame->T_c_w_ = Sophus::SE3(q,t);
+
+                    vo->addFrame(pFrame);
+                    __DEBUG__( ROS_INFO("curr frame id is %ld", pFrame->id_);)
+                }else{
+                    ROS_WARN("bboxes aliasing!! pop bboxes");
+                    frame_bboxes_buf.pop();
+//                    continue;
+                }
+            } else{
+                ros::shutdown();
             }
 
-            Frame::Ptr pFrame = Frame::createFrame();
-            pFrame->time_stamp_ = image_time;
-            pFrame->rgb_image_ = image;
-            pFrame->bboxes_ = frame_bboxes;
-            pFrame->T_c_w_ = Sophus::SE3(q,t);
-
-            vo->addFrame(pFrame);
-            __DEBUG__( ROS_INFO("curr frame id is %ld", pFrame->id_);)
+//            cout<<TermColor::iBLUE()<<img0_buf.size()<<"\t"<<frame_bboxes_buf.size()<<"\t"<<pose_buf.size()<<TermColor::RESET()<<endl;
+//            cout<<TermColor::iRED()<<"img time: "<< img0_buf.front()->header.stamp<<endl
+//            <<"bboxes time: "<< frame_bboxes_buf.front()->image_header.stamp<<endl
+//            <<"pose time: "<< pose_buf.front()->header.stamp<<TermColor::RESET()<<endl;
+//            img0_buf.pop(); frame_bboxes_buf.pop(); pose_buf.pop();
         }
         else{
-            ROS_WARN("------ not entirely received -------");
+//            __DEBUG__(ROS_DEBUG("------- not all received -----");
+//                    cout<<img0_buf.size()<<"\t"<<frame_bboxes_buf.size()<<"\t"<<pose_buf.size()<<endl;)
         }
         m_buf.unlock();
         std::chrono::milliseconds dura(2);
         std::this_thread::sleep_for(dura);
     }
+    return;
 }
 
 int main(int argc, char** argv)
@@ -146,10 +181,13 @@ int main(int argc, char** argv)
     ros::NodeHandle nh("~");
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
 
-    Config::setParameterFile(argv[1]);
+    if(argc > 0)
+        Config::setParameterFile(argv[1]);
+    else
+        return 1;
 
     //// synchronize image and bboxes time
-    string left_image_topic = string("/leftRGBImage");
+    string left_image_topic = string("/leftImageRGB");
     ROS_INFO("[VO] Subscribe to left_image_topic: %s", left_image_topic.c_str());
     ros::Subscriber sub_left_image = nh.subscribe(left_image_topic, 100, img0_callback);
 

@@ -4,6 +4,7 @@
 
 #include "g2o_Object.h"
 
+//maybe rename as cube.h
 class object_landmark{
 public:
 

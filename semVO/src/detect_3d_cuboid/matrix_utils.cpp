@@ -357,7 +357,7 @@ void linespace(T starting, T ending, T step, std::vector<T> &res)
         starting += step; // TODO could recode to better handle rounding errors
         if (res.size() > 1000)
         {
-            std::cout << "Linespace too large size!!!!" << std::endl;
+            std::cout << "Linespace too large size!!!!"<<"\t"<<res.size() << std::endl;
             break;
         }
     }

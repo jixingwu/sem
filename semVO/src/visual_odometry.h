@@ -69,7 +69,10 @@ public:
     int frame_index = 0;
     g2o::SparseOptimizer graph;
 
+    Eigen::Matrix3d Kalib;
     SE3 InitToGround;
+
+
 
 
 public:

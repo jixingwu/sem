@@ -51,7 +51,14 @@ state_(INITIALIZING), ref_(nullptr), curr_(nullptr), map_(new MapObject), num_in
     fixed_init_cam_pose_Twc = g2o::SE3Quat(cam_pose);
     __DEBUG__(cout<< TermColor::iRED()<< "fixed_init_cam_pose_Twc: "  << fixed_init_cam_pose_Twc <<TermColor::RESET() << endl;)
 
+    init_q.x() = -0.7071;
+    init_q.y() = init_q.z() = 0;
+    init_q.w() = 0.7071;
+    init_t.x() = init_t.y() = 0;
+    init_t.z() = 1.7;
+
     InitToGround = SE3(init_q, init_t);
+    __DEBUG__(cout<< "InitToGround: "<< InitToGround<< endl;)
 }
 VisualOdometry::~VisualOdometry() {}
 
@@ -105,11 +112,16 @@ void VisualOdometry::generateCubeProposal()
     pan_init << 0, 0, 0;
     g2o::SE3Quat odom_val(Quaterniond(1,0,0,0), pan_init); // from previous frame to current frame
 
-    Eigen::Matrix3d Kalib;
-    Kalib <<ref_->camera_->fx_,  0,  ref_->camera_->cx_,   // for KITTI cabinet data.
-            0,  ref_->camera_->fy_, ref_->camera_->cy_,
-            0,      0,     1;// fx fy cx cy
-
+    Kalib.setIdentity();
+//    Kalib(0,0) = ref_->camera_->fx_;
+//    Kalib(0,2) = ref_->camera_->cx_;
+//    Kalib(1,1) = ref_->camera_->fy_;
+//    Kalib(1,2) = ref_->camera_->cy_;
+    Kalib(0,0) = 718.856;
+    Kalib(1,1) = 718.856;
+    Kalib(0,2) = 607.1928;
+    Kalib(1,2) = 185.2157;
+    __DEBUG__(cout<<"Kalib: "<< Kalib << endl;)
     detect_cuboid_obj->set_calibration(Kalib);
 
 //    if(frame_index == 0)
@@ -190,7 +202,7 @@ void VisualOdometry::generateCubeProposal()
     SE3 frame_pose_to_ground = frame_pose_to_init * InitToGround;
     Matrix4d transToWorld = frame_pose_to_ground.matrix();
 
-    __DEBUG__( cout<< "frame_pose_to_ground: "<< frame_pose_to_ground<<endl;
+    __DEBUG__( cout<< "frame_pose_to_ground_se3(): "<< frame_pose_to_ground.log()<<endl;
                 cout<<"transToWorld: "<< transToWorld<<endl;)
 //    detect_cuboid_obj->whether_sample_cam_roll_pitch = (frame_index!=0);
 //    if(detect_cuboid_obj->whether_sample_cam_roll_pitch)
@@ -213,14 +225,21 @@ void VisualOdometry::generateCubeProposal()
 
     __DEBUG__(
             cout<< TermColor::iBLUE()<<"[tracking/DetectCuboid()] detected frames_cuboids size: " << curr_->frame_cuboids_.size()<< TermColor::RESET() <<endl;
-            cvNamedWindow("raw_rgb_image");
-            cvMoveWindow("raw_rgb_image", 20, 300);
-            cv::imshow("raw_rgb_image",raw_rgb_image);
+//            cvNamedWindow("raw_rgb_image");
+//            cvMoveWindow("raw_rgb_image", 20, 300);
+//            cv::imshow("raw_rgb_image",raw_rgb_image);
 
             cvNamedWindow("detect_cuboid_obj->cuboids_2d_img");
             cvMoveWindow("detect_cuboid_obj->cuboids_2d_img", 20, 300);
             cv::imshow("detect_cuboid_obj->cuboids_2d_img",detect_cuboid_obj->cuboids_2d_img);
-            cv::waitKey(0);
+            cv::waitKey(2);
+
+            cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
+            cv::String savedfilename_;
+            savedfilename_ = dest_ + std::to_string(curr_->id_) + ".jpg";
+            cout<<"curr_.id_ = "<<curr_->id_<<endl;
+            cout<<"savedfilename = "<<savedfilename_<<endl;
+            cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
     )
 //    frame_index++;
 }
