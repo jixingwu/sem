@@ -7,6 +7,7 @@
 
 typedef Eigen::Matrix<double, 7, 1> Vector7d;
 typedef Eigen::Matrix<double, 5, 1> Vector5d;
+typedef Eigen::Matrix<int, 5, 1> Vector5i;
 
 //void Estimator::inputImage(double t, const cv::Mat &_img) {
 //
@@ -169,17 +170,17 @@ void VisualOdometry::generateCubeProposal()
     int img_length = raw_rgb_image.rows;
 
     // remove some 2d bboxes too close to boundary
-    int boundary_threshold = 20;
+    int boundary_threshold = 40;
     int count = 0;
     for (auto & bounding_boxes : frame_bboxes.bounding_boxes)
     {
-        int xmin = bounding_boxes.xmin;
-        int ymin = bounding_boxes.ymin;
-        int xmax = bounding_boxes.xmax;
-        int ymax = bounding_boxes.ymax;
+        double xmin = bounding_boxes.xmin;
+        double ymin = bounding_boxes.ymin;
+        double xmax = bounding_boxes.xmax;
+        double ymax = bounding_boxes.ymax;
         double prob = bounding_boxes.probability;
-        int width = xmax - xmin;
-        int length = ymax - ymin;
+        double width = xmax - xmin;
+        double length = ymax - ymin;
 
         Vector5d object_bbox;
         object_bbox << xmin, ymin, width, length, prob;//01234
@@ -234,12 +235,12 @@ void VisualOdometry::generateCubeProposal()
             cv::imshow("detect_cuboid_obj->cuboids_2d_img",detect_cuboid_obj->cuboids_2d_img);
             cv::waitKey(2);
 
-            cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
-            cv::String savedfilename_;
-            savedfilename_ = dest_ + std::to_string(curr_->id_) + ".jpg";
-            cout<<"curr_.id_ = "<<curr_->id_<<endl;
-            cout<<"savedfilename = "<<savedfilename_<<endl;
-            cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
+//            cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
+//            cv::String savedfilename_;
+//            savedfilename_ = dest_ + std::to_string(curr_->id_) + ".jpg";
+//            cout<<"curr_.id_ = "<<curr_->id_<<endl;
+//            cout<<"savedfilename = "<<savedfilename_<<endl;
+//            cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
     )
 //    frame_index++;
 }

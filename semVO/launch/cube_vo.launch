@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+    <node name="cube_vo" pkg="cube_vo" type="cube_vo_test" output="screen">
+        <!-- name是给这个节点起的名字，pkg是工作空间中节点包的名称，type是包中需要运行的具体节点，其指向的文件必须有对应的可执行文件。 -->
+    </node>
+</launch>

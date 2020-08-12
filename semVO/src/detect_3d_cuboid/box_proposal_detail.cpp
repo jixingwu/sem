@@ -118,21 +118,25 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 
 	//逐个bbox处理
 	//       int object_id=1;
-	cout<<"num_2d_objs: "<<num_2d_objs<<endl;
-	for (int object_id = 0; object_id < num_2d_objs; object_id++)
+//	cout<<"num_2d_objs: "<<num_2d_objs<<endl;
+	for (int object_id = 0; object_id < obj_bbox_coors.rows(); object_id++)
 	{
+//        cout<<"----------8"<<endl;
 //	    std::cout<<"object id  "<<object_id<<std::endl;
 //		ca::Profiler::tictoc("One 3D object total time");
 		//计算左上角点的坐标xy
-		int left_x_raw = obj_bbox_coors(object_id, 0);
-		int top_y_raw = obj_bbox_coors(object_id, 1);
-		int obj_width_raw = obj_bbox_coors(object_id, 2);
-		int obj_height_raw = obj_bbox_coors(object_id, 3);
+		int left_x_raw = static_cast<int>(obj_bbox_coors(object_id, 0));
+		int top_y_raw = static_cast<int>(obj_bbox_coors(object_id, 1));
+		int obj_width_raw = static_cast<int>(obj_bbox_coors(object_id, 2));
+		int obj_height_raw = static_cast<int>(obj_bbox_coors(object_id, 3));
 		//计算右下角点的坐标
-		int right_x_raw = left_x_raw + obj_bbox_coors(object_id, 2);
+		int right_x_raw = left_x_raw + obj_width_raw;
 		int down_y_raw = top_y_raw + obj_height_raw;
-
+//        cout<<"----------9"<<endl;
+//        cout<<"left_x, top_y, right_x, down_y: "<<left_x_raw<<"\t"<<top_y_raw<<"\t"<<right_x_raw<<"\t"<<down_y_raw<<endl;
 		//绘制检测框
+		if(left_x_raw<0 || top_y_raw<0 || right_x_raw<0 || down_y_raw<0)
+            continue;
         rectangle(	rgb_img,
                       cv::Point(left_x_raw, top_y_raw),
                       cv::Point(right_x_raw, down_y_raw),
@@ -156,10 +160,12 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 //            cout<<down_expand_sample_all[i]<<endl;
 //        }
 		// NOTE later if in video, could use previous object yaw..., also reduce search range
+//        cout<<"----------10"<<endl;
 		double yaw_init = cam_pose.camera_yaw - 90.0 / 180.0 * M_PI; // yaw init is directly facing the camera, align with camera optical axis
 		std::vector<double> obj_yaw_samples;
+//        cout<<"----------11"<<endl;
 		linespace<double>(yaw_init - 45.0 / 180.0 * M_PI, yaw_init + 45.0 / 180.0 * M_PI, 6.0 / 180.0 * M_PI, obj_yaw_samples);
-        cout<<"111111"<<endl;
+//        cout<<"111111"<<endl;
 
 		MatrixXd all_configs_errors(400, 9);
 		MatrixXd all_box_corners_2ds(800, 8);   // initialize a large eigen matrix
@@ -177,7 +183,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 //			if((obj_width_raw * obj_width_raw + obj_height_expan * obj_height_expan) == 0) continue;
 			double obj_diaglength_expan = sqrt(obj_width_raw * obj_width_raw + obj_height_expan * obj_height_expan);
 
-			cout<<"obj_diaglength_expan: "<<obj_diaglength_expan<<endl;
+//			cout<<"obj_diaglength_expan: "<<obj_diaglength_expan<<endl;
 			// STEP5 【上边缘采样】
 			//【顶边上的采样点的x坐标】，如果边太大，则提供更多样本。为所有边缘至少提供10个，
 
@@ -190,7 +196,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 			std::vector<int> top_x_samples;
             // NOTE 边界框的最左边left_x_raw+5  到右边right_x_raw-5，每隔top_sample_resolution(20像素)的距离采样一个点
 			linespace<int>(left_x_raw + 5, right_x_raw - 5, top_sample_resolution, top_x_samples);
-			cout<<"2222"<<endl;
+//			cout<<"2222"<<endl;
 			MatrixXd sample_top_pts(2, top_x_samples.size());//储存顶边采样点
 			for (int ii = 0; ii < top_x_samples.size(); ii++)
 			{
@@ -270,7 +276,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 
 			// TODO could canny or distance map outside sampling height to speed up!!!!   Then only need to compute canny onces.
 			// detect canny edges and compute distance transform  NOTE opencv canny maybe different from matlab. but roughly same
-			cout<<"----------"<<left_x_expan_distmap<<"\t"<<top_y_expan_distmap<<"\t"<<width_expan_distmap<<"\t"<<height_expan_distmap<<"\t"<<endl;
+//			cout<<"----------"<<left_x_expan_distmap<<"\t"<<top_y_expan_distmap<<"\t"<<width_expan_distmap<<"\t"<<height_expan_distmap<<"\t"<<endl;
 
 			if (left_x_expan_distmap<0 || top_y_expan_distmap<0 || width_expan_distmap<0 || height_expan_distmap<0)
                 continue;
@@ -280,7 +286,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 			cv::Canny(gray_img(object_bbox), im_canny, 80, 200); // low thre, high thre    im_canny 0 or 255   [80 200  40 100]
 			cv::Mat dist_map;
 			cv::distanceTransform(255 - im_canny, dist_map, CV_DIST_L2, 3); // dist_map is float datatype
-
+//            cout<<"----------1"<<endl;
 			if (whether_plot_detail_images)
 			{
 				cv::imshow("im_canny", im_canny);
@@ -312,7 +318,8 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 			}
 			// different from matlab. first for loop yaw, then for configurations.
 			// 	      int obj_yaw_id=8;
-
+//            cout<<"----------2"<<endl;
+//			cout<<"roll, pitch, yaw: "<<cam_roll_samples.size()<<"\t"<<cam_pitch_samples.size()<<"\t"<<obj_yaw_samples.size()<<endl;
 			for (int cam_roll_id = 0; cam_roll_id < cam_roll_samples.size(); cam_roll_id++)
 				for (int cam_pitch_id = 0; cam_pitch_id < cam_pitch_samples.size(); cam_pitch_id++)
 					for (int obj_yaw_id = 0; obj_yaw_id < obj_yaw_samples.size(); obj_yaw_id++)
@@ -344,6 +351,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 						MatrixXd all_vp_bound_edge_angles = VP_support_edge_infos(all_vps, edge_mid_pts, lines_inobj_angles,
 																				  Vector2d(vp12_edge_angle_thre, vp3_edge_angle_thre));
 						// 		  int sample_top_pt_id=15;
+//						cout<<"sample_top_pts: "<<sample_top_pts.cols()<<endl;
 						for (int sample_top_pt_id = 0; sample_top_pt_id < sample_top_pts.cols(); sample_top_pt_id++)
 						{
 						    //STEP【8.4.1采样得到立方体上边缘的第一个点】
@@ -559,13 +567,14 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 						}	 //end of top id
 					}		  //end of yaw
 
+//            cout<<"----------3"<<endl;
 			MatrixXd all_corners = all_box_corners_2d_one_objH.topRows(2*valid_config_number_one_objH);
 
 			VectorXd normalized_score;
 			vector<int> good_proposal_ids;
 			fuse_normalize_scores_v2(all_configs_error_one_objH.col(4).head(valid_config_number_one_objH), all_configs_error_one_objH.col(5).head(valid_config_number_one_objH),
 									 normalized_score, good_proposal_ids, weight_vp_angle, whether_normalize_two_errors);
-
+//            cout<<"----------4"<<endl;
 			for (int box_id = 0; box_id < good_proposal_ids.size(); box_id++)
 			{
 				int raw_cube_ind = good_proposal_ids[box_id];
@@ -605,7 +614,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 				raw_obj_proposals.push_back(sample_obj);
 			}
 		} // end of differnet object height sampling
-
+//        cout<<"----------5"<<endl;
 		// %finally rank all proposals. [normalized_error   skew_error]
 		int actual_cuboid_num_small = std::min(max_cuboid_num, (int)raw_obj_proposals.size());
 		VectorXd all_combined_score(raw_obj_proposals.size());
@@ -618,7 +627,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 			double new_combined_error = sample_obj->normalized_error + weight_skew_error * skew_error;
 			all_combined_score(box_id) = new_combined_error;
 		}
-
+//        cout<<"----------6"<<endl;
 		std::vector<int> sort_idx_small(all_combined_score.rows());
 		iota(sort_idx_small.begin(), sort_idx_small.end(), 0);
 		sort_indexes(all_combined_score, sort_idx_small, actual_cuboid_num_small);
@@ -626,10 +635,10 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 		{
 			all_object_cuboids[object_id].push_back(raw_obj_proposals[sort_idx_small[ii]]);
 		}
-
+//        cout<<"----------7 object_id: "<<object_id<<endl;
 //		ca::Profiler::tictoc("One 3D object total time");
 	} // end of different objects
-
+//    cout<<"----------8"<<endl;
 	if (whether_plot_final_images || whether_save_final_images)
 	{
 		cv::Mat frame_all_cubes_img = rgb_img.clone();

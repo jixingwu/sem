@@ -45,6 +45,8 @@ std::mutex m_buf;
 
 #define __DEBUG__(msg) msg;
 
+cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &msg);
+
 void img0_callback(const sensor_msgs::ImageConstPtr &img_msg)
 {
     m_buf.lock();
@@ -65,6 +67,17 @@ void pose_callback(const nav_msgs::OdometryConstPtr &pose_msg)
     pose_buf.push(pose_msg);
 //    cout<<TermColor::iGREEN()<<"pose_msgs: "<<pose_msg->header.stamp<<TermColor::RESET()<<endl;
     m_buf.unlock();
+}
+
+void detec_callback(const sensor_msgs::ImageConstPtr &img_msg)
+{
+//    cv::Mat image = getImageFromMsg(img_msg);
+//    cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/bboxes_image/";
+//    cv::String savedfilename_;
+//    savedfilename_ = dest_ + std::to_string(img_msg->header.seq) + ".jpg";
+//    cout<<"img_msg->header.frame_id = "<<img_msg->header.frame_id<<endl;
+//    cout<<"savedfilename = "<<savedfilename_<<endl;
+//    cv::imwrite(savedfilename_, image);
 }
 
 cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &msg){
@@ -200,6 +213,10 @@ int main(int argc, char** argv)
     ROS_INFO("[VO] Subscribe to camera_pose_topic: %s", camera_pose_topic.c_str());
 //    message_filters::Subscriber<nav_msgs::Odometry> camera_pose_sub(nh, camera_pose_topic, 100);
     ros::Subscriber sub_pose = nh.subscribe(camera_pose_topic, 100, pose_callback);
+
+    string detection_image_topic = string("/darknet_ros/detection_image");
+    ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());
+    ros::Subscriber sub_detec = nh.subscribe(detection_image_topic, 100, detec_callback);
 
     std::thread sync_thread{sync_process};
 #ifdef DEBUG

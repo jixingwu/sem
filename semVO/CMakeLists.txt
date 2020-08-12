@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
     #camera_models
     image_transport
     darknet_ros_msgs
+        message_filters
         )
 
 find_package(OpenCV REQUIRED)
@@ -34,6 +35,10 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
 )
 
+find_package(Sophus REQUIRED)
+set(Sophus_LIBRARIES libSophus.so)
+include_directories(${Sophus_INCLUDE_DIRS})
+
 #find_package(G2O REQUIRED)
 #include_directories(${G2O_INCLUDE_DIRS})
 
@@ -49,6 +54,7 @@ catkin_package(
         darknet_ros_msgs
         tf
         cv_bridge
+        message_filters
 
 )
 
@@ -62,16 +68,22 @@ add_library(cube_vo_lib
         src/line_lbd/line_lbd_allclass.cpp
         src/line_lbd/lsd.cpp
         src/line_lbd/LSDDetector.cpp
-        src/Frame.cpp
+        #src/Frame.cpp
         src/landmark.cpp
-        src/map.cpp
         src/map_drawer.cpp
         src/TopoMetric.cpp
-        src/Tracking.cpp
+        src/feature_tracker.cpp
+        src/estimator.cpp
+
+        #vo
+        src/camera.cpp
+        src/config.cpp
+        src/frame.cpp
+        src/map.cpp
+        src/visual_odometry.cpp
     )
 
-target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} ${G2O_LIBRARIES}
-        )
+target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} ${G2O_LIBRARIES} ${Sophus_LIBRARIES})
 
 
 #add_executable(vins_node src/rosNodeTest.cpp)
