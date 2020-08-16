@@ -53,13 +53,21 @@ public:
         LOST
     };
 
-    VOState state_;
-    MapObject::Ptr map_;
-    Frame::Ptr ref_;
-    Frame::Ptr curr_;
+    VOState             state_; // current VO status
+    SemMap::Ptr         map_;   // map with all frames and map points
+
+    Frame::Ptr          ref_;   // reference key-frame
+    Frame::Ptr          curr_;  // current frame
+
+    vector<ObjectSet>                       cubes_curr_;    //cubes in current frame, 3D
+    vector<darknet_ros_msgs::BoundingBoxes> bboxes_curr_;   // bboxes in current frame, 2D
+
     SE3 T_C_w_estimated_;
     int num_inliers_;
-    int num_lost_;
+    int num_lost_ = 0;
+
+    // parameters
+    int max_num_lost_ = 10;
 
     // set cube class and queue parameter
     detect_3d_cuboid *detect_cuboid_obj;
@@ -87,11 +95,14 @@ public:
     void inputBboxes(const darknet_ros_msgs::BoundingBoxes);
 
     void setGenerateCubeParameter();
-//    void generateCubeProposal(const cv::Mat& raw_image,  const darknet_ros_msgs::BoundingBoxes& frame_bboxes);
     void generateCubeProposal();
-    void cubeProposalScoring();
-
     void addKeyFrame();
+
+    void cubeMatching();
+    void addMapCubes();
+
+    bool checkKeyFrame();
+    bool checkReceivedPose();
 
 };
 

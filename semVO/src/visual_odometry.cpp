@@ -4,6 +4,7 @@
 
 #include "visual_odometry.h"
 #include "config.h"
+#include "Converter.h"
 
 typedef Eigen::Matrix<double, 7, 1> Vector7d;
 typedef Eigen::Matrix<double, 5, 1> Vector5d;
@@ -12,9 +13,10 @@ typedef Eigen::Matrix<int, 5, 1> Vector5i;
 //void Estimator::inputImage(double t, const cv::Mat &_img) {
 //
 //}
-#define __DEBUG__(msg) msg;
+#define __DEBUG__(msg);
+#define __TRACIN_DEBUG__(msg) msg;
 VisualOdometry::VisualOdometry():
-state_(INITIALIZING), ref_(nullptr), curr_(nullptr), map_(new MapObject), num_inliers_(0), num_lost_(0)
+        state_(INITIALIZING), ref_(nullptr), curr_(nullptr), map_(new SemMap), num_inliers_(0), num_lost_(0)
 {
     // 创建vo对象后就把generate cube的参数设置完成
     // set initial camera pose wrt ground. by default camera parallel to ground, height=1.7 (kitti)
@@ -39,18 +41,18 @@ state_(INITIALIZING), ref_(nullptr), curr_(nullptr), map_(new MapObject), num_in
     line_lbd_obj.line_length_thres = 15;
 
     // graph optimization
-    g2o::BlockSolverX::LinearSolverType* linearSolver;
-    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
-    g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
-    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    graph.setAlgorithm(solver);    graph.setVerbose(false);
-
-    Eigen::Quaterniond init_cam_pose_q(init_q.w(), init_q.x(), init_q.y(), init_q.z());
-    Eigen::Vector3d init_cam_pose_v(init_t.x(), init_t.y(), init_t.z());
-
-    Vector7d cam_pose; cam_pose<< init_t.x(), init_t.y(), init_t.z(), init_q.x(), init_q.y(), init_q.z(), init_q.w();//0 0 1.7000000 -0.7071 0 0 0.7071
-    fixed_init_cam_pose_Twc = g2o::SE3Quat(cam_pose);
-    __DEBUG__(cout<< TermColor::iRED()<< "fixed_init_cam_pose_Twc: "  << fixed_init_cam_pose_Twc <<TermColor::RESET() << endl;)
+//    g2o::BlockSolverX::LinearSolverType* linearSolver;
+//    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
+//    g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
+//    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
+//    graph.setAlgorithm(solver);    graph.setVerbose(false);
+//
+//    Eigen::Quaterniond init_cam_pose_q(init_q.w(), init_q.x(), init_q.y(), init_q.z());
+//    Eigen::Vector3d init_cam_pose_v(init_t.x(), init_t.y(), init_t.z());
+//
+//    Vector7d cam_pose; cam_pose<< init_t.x(), init_t.y(), init_t.z(), init_q.x(), init_q.y(), init_q.z(), init_q.w();//0 0 1.7000000 -0.7071 0 0 0.7071
+//    fixed_init_cam_pose_Twc = g2o::SE3Quat(cam_pose);
+//    __DEBUG__(cout<< TermColor::iRED()<< "fixed_init_cam_pose_Twc: "  << fixed_init_cam_pose_Twc <<TermColor::RESET() << endl;)
 
     init_q.x() = -0.7071;
     init_q.y() = init_q.z() = 0;
@@ -63,7 +65,22 @@ state_(INITIALIZING), ref_(nullptr), curr_(nullptr), map_(new MapObject), num_in
 }
 VisualOdometry::~VisualOdometry() {}
 
-void VisualOdometry::addKeyFrame() {
+void VisualOdometry::addKeyFrame()
+{
+    if(map_->keyframes_.empty())
+    {
+        // first key-frame, add all cube object into map
+        for (size_t ii = 0; ii < curr_->frame_cuboids_.size(); ++ii)
+        {
+            MapCube::Ptr map_cube = MapCube::createMapCube();
+            map_->insertMapCube(map_cube);
+        }
+    }
+
+}
+
+void VisualOdometry::cubeMatching()
+{
 
 }
 
@@ -74,11 +91,10 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
         {
             state_ = OK;
             curr_ = ref_ = frame;
-            // extract features from first frame and add them into mat
-//            generateCubeProposal(frame->rgb_image_, frame->bboxes_);
-            generateCubeProposal();// OUTPUT: frame_cuboids as a 'vector<ObjectSet>' type
-//            cubeProposalScoring(); // update frame_cuboids
-            addKeyFrame();
+            // OUTPUT: frame_cuboids as a 'vector<ObjectSet>' type
+            // equal to extractKeyPoints() and computeDescriptors()
+            generateCubeProposal();
+            addKeyFrame();// the first frame is a key-frame
             break;
         }
         case OK:
@@ -86,14 +102,27 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
             curr_ = frame;
             curr_->T_c_w_ = ref_->T_c_w_;//讲当前帧pose设置为上一帧pose
             generateCubeProposal();
-//            cubeProposalScoring();
-            // TODO:估计相机pose, 将vins的camera pose与initTransToWorld相乘；// 无需估计vins会pub
-            // TODO: check camera pose
+            cubeMatching();// equal to featureMatching();
+            // TODO:估计相机pose poseEstimationPnP() to 将vins的camera pose与initTransToWorld相乘；
             // if true, 更新当前帧的pose. if else state_ = LOST;
+            if(checkReceivedPose())
+            {
+
+            }else{ // bad estimation due to various reasons
+                num_lost_++;
+                if(num_lost_ > max_num_lost_)
+                {
+                    state_ = LOST;
+                }
+                return false;
+            }
+            break;
         }
         case LOST:
         {
-
+            ROS_ERROR("vo has lost.");
+            ros::shutdown();
+            break;
         }
     }
     return true;
@@ -199,8 +228,8 @@ void VisualOdometry::generateCubeProposal()
 
     assert( all_object_coor.size() != 0 && " all_object_corr is empty");
 
-    SE3 frame_pose_to_init = curr_->T_c_w_;
-    SE3 frame_pose_to_ground = frame_pose_to_init * InitToGround;
+    Sophus::SE3 frame_pose_to_init = curr_->T_c_w_;
+    Sophus::SE3 frame_pose_to_ground = frame_pose_to_init * InitToGround;
     Matrix4d transToWorld = frame_pose_to_ground.matrix();
 
     __DEBUG__( cout<< "frame_pose_to_ground_se3(): "<< frame_pose_to_ground.log()<<endl;
@@ -215,21 +244,19 @@ void VisualOdometry::generateCubeProposal()
     assert(all_object_coor.size() != 0 && "bboxes_buf is empty");
 
     __DEBUG__(
-            cout<< TermColor::iRED()
-                << "[feature_tracker/DetectCuboid] raw_rgb_image.width: " << raw_rgb_image.cols << endl
-                << "all_object_coor.size: "<<all_object_coor.size()<< endl
-                << "all_lines_raw.size: " << all_lines_raw.size()<< TermColor::RESET() << endl;
+//            cout<< TermColor::iRED()
+//                << "[feature_tracker/DetectCuboid] raw_rgb_image.width: " << raw_rgb_image.cols << endl
+//               << "all_object_coor.size: "<<all_object_coor.size()<< endl
+//               << "all_lines_raw.size: " << all_lines_raw.size()<< TermColor::RESET() << endl;
 
     )
-    detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, curr_->frame_cuboids_);
+    vector<ObjectSet> all_obj_cubes;
+    detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, all_obj_cubes);
 //    currframe->cuboids_2d_img = detect_cuboid_obj->cuboids_2d_img;
 
-    __DEBUG__(
-            cout<< TermColor::iBLUE()<<"[tracking/DetectCuboid()] detected frames_cuboids size: " << curr_->frame_cuboids_.size()<< TermColor::RESET() <<endl;
-//            cvNamedWindow("raw_rgb_image");
-//            cvMoveWindow("raw_rgb_image", 20, 300);
-//            cv::imshow("raw_rgb_image",raw_rgb_image);
 
+    __DEBUG__(
+            cout<< TermColor::iBLUE()<<"[tracking/DetectCuboid()] detected all_obj_cubes size: " << all_obj_cubes.size()<< TermColor::RESET() <<endl;
             cvNamedWindow("detect_cuboid_obj->cuboids_2d_img");
             cvMoveWindow("detect_cuboid_obj->cuboids_2d_img", 20, 300);
             cv::imshow("detect_cuboid_obj->cuboids_2d_img",detect_cuboid_obj->cuboids_2d_img);
@@ -242,16 +269,51 @@ void VisualOdometry::generateCubeProposal()
 //            cout<<"savedfilename = "<<savedfilename_<<endl;
 //            cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
     )
-//    frame_index++;
+
+    // cp and analyze results.
+    curr_->local_cuboids_.clear();
+    // previous frame_pose_to_init = curr_->T_c_w_;
+    // transToWorld_se3;
+    for (int ii = 0; ii < (int)all_obj_cubes.size(); ++ii)
+    {
+        if(!all_obj_cubes[ii].empty())
+        {
+            cuboid *raw_cuboid = all_obj_cubes[ii][0];
+            Vector9d cube_pose;// Vector3d t, roll yall pitch, Vector3d scale
+            cube_pose<< raw_cuboid->pos[0], raw_cuboid->pos[1], raw_cuboid->pos[2], 0, 0, raw_cuboid->rotY,
+                raw_cuboid->scale[0], raw_cuboid->scale[1], raw_cuboid->scale[2];
+            Eigen::AngleAxisd rollAngle(AngleAxisd(cube_pose[3], Vector3d::UnitX()));
+            Eigen::AngleAxisd pitchAngle(AngleAxisd(cube_pose[4], Vector3d::UnitY()));
+            Eigen::AngleAxisd yawAngle(AngleAxisd(cube_pose[5], Vector3d::UnitZ()));
+            Eigen::Quaterniond pose_qua = rollAngle * pitchAngle * yawAngle;
+            Sophus::SE3 pose = Sophus::SE3(pose_qua, cube_pose.head(3));
+            Vector3d scale = cube_pose.tail(3);
+
+            // measurement in local camera frame! important
+            MapCube *newcuboid = new MapCube();
+            newcuboid->pose_ = pose;
+            newcuboid->scale_ = scale;
+            newcuboid->bbox_2d_ = cv::Rect(raw_cuboid->rect_detect_2d[0], raw_cuboid->rect_detect_2d[1], raw_cuboid->rect_detect_2d[2], raw_cuboid->rect_detect_2d[3]);
+            newcuboid->bbox_vec_ = Vector4d((double)newcuboid->bbox_2d_.x + (double)newcuboid->bbox_2d_.width/2, (double)newcuboid->bbox_2d_.y + (double) newcuboid->bbox_2d_.height/2,
+                                           (double)newcuboid->bbox_2d_.width, (double)newcuboid->bbox_2d_.height);
+            newcuboid->box_corners_2d_ = raw_cuboid->box_corners_2d;
+            newcuboid->bbox_2d_tight_ = cv::Rect(raw_cuboid->rect_detect_2d[0] + raw_cuboid->rect_detect_2d[2] / 10.0,
+                                                raw_cuboid->rect_detect_2d[1] + raw_cuboid->rect_detect_2d[3] / 10.0,
+                                                raw_cuboid->rect_detect_2d[2] * 0.8, raw_cuboid->rect_detect_2d[3] * 0.8);
+            get_cuboid_draw_edge_markers(newcuboid->edge_markers_, raw_cuboid->box_config_type, false);
+            newcuboid->moRefF_ = curr_;
+            newcuboid->object_id_in_localF_ = curr_->local_cuboids_.size();
+            newcuboid->worldPose_ = frame_pose_to_init;
+
+            double obj_cam_dist = std::min(std::max(newcuboid->pose_.translation()(2), 10.0), 30.0); // cut into [a,b]
+            double obj_means_quality = (60.0 - obj_cam_dist) / 40.0;
+            newcuboid->meas_quality_ = obj_means_quality;
+
+            if(newcuboid->meas_quality_ < 0.1)
+                ROS_WARN_STREAM("Abnormal measure quality!!: " << newcuboid->meas_quality_);
+            curr_->local_cuboids_.push_back(newcuboid);
+        }
+    }
+
 }
 
-void VisualOdometry::cubeProposalScoring()
-{
-//    vector<ObjectSet>  frame_cuboids = curr_->frame_cuboids_;
-//    for(int object_id = 0; object_id < frame_cuboids.size(); object_id++)
-//    {
-//        if(frame_cuboids[object_id].empty()) continue;
-//        Vector3d raw_object_errors = Vector3d(frame_cuboids[object_id][0]->edge_distance_error);
-//
-//    }
-}

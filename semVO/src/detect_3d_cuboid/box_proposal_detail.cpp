@@ -588,6 +588,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 				}
 
 				cuboid *sample_obj = new cuboid();
+				// this function is 根据目前的相机的pose得到cube的scale，pose, 由bbox， cam_pose, K映射得到的
 				change_2d_corner_to_3d_object(all_box_corners_2d_one_objH.block(2 * raw_cube_ind, 0, 2, 8), all_configs_error_one_objH.row(raw_cube_ind).head<3>(),
 											  ground_plane_sensor, cam_pose.transToWolrd, cam_pose.invK, cam_pose.projectionMatrix, *sample_obj);
 				// 		  sample_obj->print_cuboid();

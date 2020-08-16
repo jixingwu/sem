@@ -120,12 +120,6 @@ void sync_process()
             {
                 ROS_WARN("this image is not inited!! ");
                 img0_buf.pop();
-//                continue;
-            }
-            else if(img0_buf.front()->header.stamp > pose_buf.front()->header.stamp)
-            {
-                ROS_ERROR("not initialization!!");
-                ros::shutdown();
             }
             else if(img0_buf.front()->header.stamp == pose_buf.front()->header.stamp)
             {
@@ -165,6 +159,7 @@ void sync_process()
 //                    continue;
                 }
             } else{
+                ROS_ERROR("not initialization!!");
                 ros::shutdown();
             }
 
@@ -175,8 +170,8 @@ void sync_process()
 //            img0_buf.pop(); frame_bboxes_buf.pop(); pose_buf.pop();
         }
         else{
-//            __DEBUG__(ROS_DEBUG("------- not all received -----");
-//                    cout<<img0_buf.size()<<"\t"<<frame_bboxes_buf.size()<<"\t"<<pose_buf.size()<<endl;)
+            __DEBUG__(ROS_DEBUG_ONCE("------- not all received -----");
+                    cout<<img0_buf.size()<<"\t"<<frame_bboxes_buf.size()<<"\t"<<pose_buf.size()<<endl;)
         }
         m_buf.unlock();
         std::chrono::milliseconds dura(2);
