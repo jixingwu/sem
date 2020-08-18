@@ -61,7 +61,7 @@ void detect_3d_cuboid::set_cam_pose(const Matrix4d &transToWolrd)
 //}
 
 void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &transToWolrd, const MatrixXd &obj_bbox_coors,
-									 Eigen::MatrixXd all_lines_raw, std::vector<ObjectSet> &all_object_cuboids)
+									 vector<string> v_class, Eigen::MatrixXd all_lines_raw, std::vector<ObjectSet> &all_object_cuboids)
 {
     cv::Mat merge_lines_img = rgb_img.clone();
     // 绘制上边缘采样点
@@ -124,6 +124,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 //        cout<<"----------8"<<endl;
 //	    std::cout<<"object id  "<<object_id<<std::endl;
 //		ca::Profiler::tictoc("One 3D object total time");
+        string object_class = v_class[object_id];
 		//计算左上角点的坐标xy
 		int left_x_raw = static_cast<int>(obj_bbox_coors(object_id, 0));
 		int top_y_raw = static_cast<int>(obj_bbox_coors(object_id, 1));
@@ -612,6 +613,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat &rgb_img, const Matrix4d &tra
 					sample_obj->camera_pitch_delta = 0;
 				}
 
+				sample_obj->object_class = object_class;
 				raw_obj_proposals.push_back(sample_obj);
 			}
 		} // end of differnet object height sampling
