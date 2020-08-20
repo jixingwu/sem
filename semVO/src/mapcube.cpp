@@ -11,12 +11,6 @@ MapCube::MapCube()
 
 }
 
-MapCube::MapCube ( long id, SE3 pose, Vector3d scale )
-        : id_(id), pose_(pose), scale_(scale), observed_times_(0)
-{
-
-}
-
 MapCube::Ptr MapCube::createMapCube()
 {
     static long factory_id = 0;

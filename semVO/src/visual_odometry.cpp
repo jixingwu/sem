@@ -5,6 +5,9 @@
 #include "visual_odometry.h"
 #include "config.h"
 #include "Converter.h"
+#include "include/TermColor.h"
+
+#include "GraphMatching.h"//用作bbox的匹配
 
 typedef Eigen::Matrix<double, 7, 1> Vector7d;
 typedef Eigen::Matrix<double, 5, 1> Vector5d;
@@ -79,11 +82,6 @@ void VisualOdometry::addKeyFrame()
 
 }
 
-void VisualOdometry::cubeMatching()
-{
-
-}
-
 bool VisualOdometry::addFrame(Frame::Ptr frame)
 {
     switch (state_) {
@@ -104,18 +102,20 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
             generateCubeProposal();
             cubeMatching();// equal to featureMatching();
             // TODO:估计相机pose poseEstimationPnP() to 将vins的camera pose与initTransToWorld相乘；
-            // if true, 更新当前帧的pose. if else state_ = LOST;
-            if(checkReceivedPose())
-            {
-
-            }else{ // bad estimation due to various reasons
-                num_lost_++;
-                if(num_lost_ > max_num_lost_)
-                {
-                    state_ = LOST;
-                }
-                return false;
-            }
+//             if true, 更新当前帧的pose. if else state_ = LOST;
+//            if(checkReceivedPose())
+//            {
+//
+//            }
+//            else
+//            { // bad estimation due to various reasons
+//                num_lost_++;
+//                if(num_lost_ > max_num_lost_)
+//                {
+//                    state_ = LOST;
+//                }
+//                return false;
+//            }
             break;
         }
         case LOST:
@@ -129,18 +129,21 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
 }
 
 #define __DEBUG__(msg) msg;
-void VisualOdometry::setGenerateCubeParameter()
-{}
+bool VisualOdometry::isBboxesInImage(Vector4d v, cv::Mat image)
+{
+    int img_width = image.cols;
+    int img_height = image.rows;
+    if(v(0)>0 && v(1)>0 && v(2)<img_width && v(3)<img_height)
+        return true;
+    else
+        return false;
 
+}
 void VisualOdometry::generateCubeProposal()
 {
+    __DEBUG__(cout<< TermColor::iBLUE() <<"starting detecting cubes ..."<<endl;)
     const cv::Mat &raw_rgb_image = curr_->rgb_image_;
     const darknet_ros_msgs::BoundingBoxes frame_bboxes = *curr_->bboxes_;
-
-    g2o::SE3Quat curr_cam_pose_Twc;
-    Eigen:Vector3d pan_init;
-    pan_init << 0, 0, 0;
-    g2o::SE3Quat odom_val(Quaterniond(1,0,0,0), pan_init); // from previous frame to current frame
 
     Kalib.setIdentity();
 //    Kalib(0,0) = ref_->camera_->fx_;
@@ -151,28 +154,7 @@ void VisualOdometry::generateCubeProposal()
     Kalib(1,1) = 718.856;
     Kalib(0,2) = 607.1928;
     Kalib(1,2) = 185.2157;
-    __DEBUG__(cout<<"Kalib: "<< Kalib << endl;)
     detect_cuboid_obj->set_calibration(Kalib);
-
-//    if(frame_index == 0)
-//        curr_cam_pose_Twc = fixed_init_cam_pose_Twc;
-//    else{
-//        g2o::SE3Quat prev_pose_Tcw = all_frames[frame_index-1]->cam_pose_Tcw;
-//        if (frame_index>1)  // from third frame, use constant motion model to initialize camera.
-//        {
-//            g2o::SE3Quat prev_prev_pose_Tcw = all_frames[frame_index-2]->cam_pose_Tcw;
-//            odom_val = prev_pose_Tcw*prev_prev_pose_Tcw.inverse();
-//        }
-//        curr_cam_pose_Twc = (odom_val*prev_pose_Tcw).inverse();
-//    }
-
-    tracking_frame* currframe = new tracking_frame();
-    currframe->frame_img = frame_index;
-//    all_frames[frame_index] = currframe;
-    all_frames.push_back(currframe);
-
-    bool has_detected_cuboid = false;
-    g2o::cuboid cube_local_meas; double proposal_error;
 
     // edge detection
     cv::Mat all_lines_mat;
@@ -187,10 +169,9 @@ void VisualOdometry::generateCubeProposal()
     assert( all_lines_raw.size() != 0 && "Eigen all_lines_raw is empty");
 
     std::vector<Vector4d> good_object_bbox;
-//    frame_bboxes = frame_bboxes_buf.front();
-//    frame_bboxes_buf.pop();
+
     __DEBUG__(
-            cout<< TermColor::iBLUE() << "[feature_tracker/DetectCuboid] frame_bboxes size: "<< frame_bboxes.bounding_boxes.size() << TermColor::RESET() << endl;
+            cout<< "[feature_tracker/DetectCuboid] frame_bboxes size: "<< frame_bboxes.bounding_boxes.size() << endl;
     )
     const int bboxes_length = frame_bboxes.bounding_boxes.size();
     Eigen::Matrix<double, Dynamic, Dynamic> all_object_coor(bboxes_length, 5);
@@ -199,8 +180,9 @@ void VisualOdometry::generateCubeProposal()
     int img_length = raw_rgb_image.rows;
 
     // remove some 2d bboxes too close to boundary
-    int boundary_threshold = 40;
+    int boundary_threshold = 20;
     int count = 0;
+    vector<string> v_class;
     for (auto & bounding_boxes : frame_bboxes.bounding_boxes)
     {
         double xmin = bounding_boxes.xmin;
@@ -210,13 +192,18 @@ void VisualOdometry::generateCubeProposal()
         double prob = bounding_boxes.probability;
         double width = xmax - xmin;
         double length = ymax - ymin;
+        string object_class = bounding_boxes.Class;
 
         Vector5d object_bbox;
         object_bbox << xmin, ymin, width, length, prob;//01234
 
+        v_class.push_back(object_class);
+
         if((object_bbox(0) < boundary_threshold) || (object_bbox(0) + object_bbox(2) > img_width - boundary_threshold)
            || (object_bbox(1) < boundary_threshold) || (object_bbox(1) + object_bbox(3) > img_length - boundary_threshold))
             continue;
+//        if(!isBboxesInImage(Vector4d(xmin, ymin, width, length), raw_rgb_image))
+//            continue;
 //        good_object_bbox.push_back(object_bbox);
         for (int cc = 0; cc < 5; ++cc) {
             all_object_coor(count, cc) = object_bbox(cc);
@@ -234,43 +221,31 @@ void VisualOdometry::generateCubeProposal()
 
     __DEBUG__( cout<< "frame_pose_to_ground_se3(): "<< frame_pose_to_ground.log()<<endl;
                 cout<<"transToWorld: "<< transToWorld<<endl;)
-//    detect_cuboid_obj->whether_sample_cam_roll_pitch = (frame_index!=0);
-//    if(detect_cuboid_obj->whether_sample_cam_roll_pitch)
-//        transToWorld = fixed_init_cam_pose_Twc.to_homogeneous_matrix();
-//    else
-//        transToWorld = curr_cam_pose_Twc.to_homogeneous_matrix();
 
 
     assert(all_object_coor.size() != 0 && "bboxes_buf is empty");
 
-    __DEBUG__(
-//            cout<< TermColor::iRED()
-//                << "[feature_tracker/DetectCuboid] raw_rgb_image.width: " << raw_rgb_image.cols << endl
-//               << "all_object_coor.size: "<<all_object_coor.size()<< endl
-//               << "all_lines_raw.size: " << all_lines_raw.size()<< TermColor::RESET() << endl;
-
-    )
     vector<ObjectSet> all_obj_cubes;
-    detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, all_lines_raw, all_obj_cubes);
-//    currframe->cuboids_2d_img = detect_cuboid_obj->cuboids_2d_img;
-
+    detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, v_class, all_lines_raw, all_obj_cubes);
 
     __DEBUG__(
-            cout<< TermColor::iBLUE()<<"[tracking/DetectCuboid()] detected all_obj_cubes size: " << all_obj_cubes.size()<< TermColor::RESET() <<endl;
+            cout<<"[tracking/DetectCuboid()] detected all_obj_cubes size: " << all_obj_cubes.size()<<endl;
             cvNamedWindow("detect_cuboid_obj->cuboids_2d_img");
             cvMoveWindow("detect_cuboid_obj->cuboids_2d_img", 20, 300);
             cv::imshow("detect_cuboid_obj->cuboids_2d_img",detect_cuboid_obj->cuboids_2d_img);
             cv::waitKey(2);
 
-//            cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
-//            cv::String savedfilename_;
-//            savedfilename_ = dest_ + std::to_string(curr_->id_) + ".jpg";
-//            cout<<"curr_.id_ = "<<curr_->id_<<endl;
-//            cout<<"savedfilename = "<<savedfilename_<<endl;
-//            cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
+            cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
+            cv::String savedfilename_;
+            char frame_index[256];
+            sprintf(frame_index,"%06lu", curr_->id_);
+            savedfilename_ = dest_ + frame_index + ".jpg";
+            cout<<"curr_.id_ = "<<curr_->id_<<"\t frame_index = "<<frame_index<<endl;
+            cout<<"savedfilename = "<<savedfilename_<<endl;
+            cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
     )
 
-    // cp and analyze results.
+    // cp and analyze results.对于每个检测到的raw cube，将其转换为可添加到SemMap中的类型——MapCube
     curr_->local_cuboids_.clear();
     // previous frame_pose_to_init = curr_->T_c_w_;
     // transToWorld_se3;
@@ -293,15 +268,16 @@ void VisualOdometry::generateCubeProposal()
             MapCube *newcuboid = new MapCube();
             newcuboid->pose_ = pose;
             newcuboid->scale_ = scale;
+            newcuboid->object_class = raw_cuboid->object_class;
             newcuboid->bbox_2d_ = cv::Rect(raw_cuboid->rect_detect_2d[0], raw_cuboid->rect_detect_2d[1], raw_cuboid->rect_detect_2d[2], raw_cuboid->rect_detect_2d[3]);
-            newcuboid->bbox_vec_ = Vector4d((double)newcuboid->bbox_2d_.x + (double)newcuboid->bbox_2d_.width/2, (double)newcuboid->bbox_2d_.y + (double) newcuboid->bbox_2d_.height/2,
-                                           (double)newcuboid->bbox_2d_.width, (double)newcuboid->bbox_2d_.height);
+            newcuboid->bbox_vec_ = Vector4d((double)newcuboid->bbox_2d_.x, (double)newcuboid->bbox_2d_.y,
+                                           (double)newcuboid->bbox_2d_.width, (double)newcuboid->bbox_2d_.height);// xmin, ymin, width, height
             newcuboid->box_corners_2d_ = raw_cuboid->box_corners_2d;
             newcuboid->bbox_2d_tight_ = cv::Rect(raw_cuboid->rect_detect_2d[0] + raw_cuboid->rect_detect_2d[2] / 10.0,
                                                 raw_cuboid->rect_detect_2d[1] + raw_cuboid->rect_detect_2d[3] / 10.0,
                                                 raw_cuboid->rect_detect_2d[2] * 0.8, raw_cuboid->rect_detect_2d[3] * 0.8);
             get_cuboid_draw_edge_markers(newcuboid->edge_markers_, raw_cuboid->box_config_type, false);
-            newcuboid->moRefF_ = curr_;
+            newcuboid->moRefF_ = &curr_;
             newcuboid->object_id_in_localF_ = curr_->local_cuboids_.size();
             newcuboid->worldPose_ = frame_pose_to_init;
 
@@ -314,6 +290,60 @@ void VisualOdometry::generateCubeProposal()
             curr_->local_cuboids_.push_back(newcuboid);
         }
     }
+
+    __DEBUG__(cout<<"curr_.local_cuboids_.size(): "<<curr_->local_cuboids_.size()<<endl;)
+    __DEBUG__(cout<<"ending detection ..."<<TermColor::RESET()<<endl;)
+
+}
+#define __DEBUG_MATCH__(msg) msg;
+void VisualOdometry::cubeMatching()
+{
+    __DEBUG_MATCH__(cout<<TermColor::iRED()<<"staring matching cubes ..."<<endl;)
+
+    int M = ref_->local_cuboids_.size(), N = curr_->local_cuboids_.size();
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> simMatrix;
+    simMatrix.resize(M, N);
+//    simMatrix.Constant(-1);
+
+    //ref_ 去匹配 curr_, 每个M去找N
+    __DEBUG_MATCH__(cout<<"M: "<<M<<"\t N: "<<N<<endl;)
+    for (int simMatrixM = 0; simMatrixM < M; ++simMatrixM)
+    {
+        Vector4d refBboxes = ref_->local_cuboids_[simMatrixM]->bbox_vec_;// xmin ymin  width height
+        for (int simMatrixN = 0; simMatrixN < N; ++simMatrixN)
+        {
+            Vector4d curBboxes = curr_->local_cuboids_[simMatrixN]->bbox_vec_;
+            if(!isBboxesInImage(refBboxes, ref_->rgb_image_) || !isBboxesInImage(curBboxes, curr_->rgb_image_))
+                continue;
+
+            double error;
+            //TODO: 添加运动约束
+            if(ref_->local_cuboids_[simMatrixM]->object_class == curr_->local_cuboids_[simMatrixN]->object_class)
+            {
+
+                error = Vector4d(refBboxes - curBboxes).norm();//分量平方和的平方根
+                simMatrix(M, N) = exp(-1 * error);
+            }
+            else
+                simMatrix(M, N) = 0;
+        }
+    }
+    Eigen::MatrixXd simMat_simhorn = graphMatching_h.sinkhorn(simMatrix);
+    Eigen::VectorXi retmatch(graphMatching_h.prior_graph->num_of_nodes()), retmatchinverse(graphMatching_h.visited_graph->num_of_nodes());
+    retmatch.setConstant(-1);
+    retmatchinverse.setConstant(-1);
+
+    // 构建出的相似度矩阵的匹配结果
+    Eigen::MatrixXd sim_results;
+    sim_results = graphMatching_h.getBestMatchFromSimMat(simMat_simhorn, retmatch, retmatchinverse);
+    graphMatching_h.clear();
+
+    __DEBUG_MATCH__(
+            cout<<"上一帧与第"<<curr_->id_<<"帧bboxes的匹配结果矩阵sim_results: \n"<<sim_results<<endl;
+            cout<<"retmatch: "<<retmatch<<endl;
+            cout<<TermColor::RESET()<<endl;)
+
+
 
 }
 

@@ -11,7 +11,7 @@
 #include <opencv2/core/core.hpp>
 
 #include "matrix_utils.h"
-
+using namespace std;
 class cuboid // matlab cuboid struct. cuboid on ground. only has yaw, no obj roll/pitch
 {
     public:
@@ -32,7 +32,7 @@ class cuboid // matlab cuboid struct. cuboid on ground. only has yaw, no obj rol
       double camera_roll_delta;
       double camera_pitch_delta;
 
-      string object_class; // detected object's class
+      std::string object_class; // detected object's class
 
       void print_cuboid(); // print pose information
 };
@@ -61,7 +61,8 @@ class detect_3d_cuboid
       void set_cam_pose(const Eigen::Matrix4d &transToWolrd);
 
       // object detector needs image, camera pose, and 2D bounding boxes(n*5, each row: xywh+prob)  long edges: n*4.  all number start from 0
-      void detect_cuboid(const cv::Mat &rgb_img, const Eigen::Matrix4d &transToWolrd, const Eigen::MatrixXd &obj_bbox_coors, vector<string> v_class,
+      void detect_cuboid(const cv::Mat &rgb_img, const Eigen::Matrix4d &transToWolrd, const Eigen::MatrixXd &obj_bbox_coors,
+                         std::vector<std::string> v_class,
                          Eigen::MatrixXd edges,
                          std::vector<ObjectSet> &all_object_cuboids);
 

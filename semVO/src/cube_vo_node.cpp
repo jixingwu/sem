@@ -26,12 +26,12 @@
 #include <opencv2/opencv.hpp>
 #include <sensor_msgs/Image.h>
 #include <cv_bridge/cv_bridge.h>
-#include "feature_tracker.h"
-#include "DataManager.h"
+#include <nav_msgs/Odometry.h>
+
 #include "frame.h"
-#include "estimator.h"
 #include "visual_odometry.h"
 #include "config.h"
+#include "include/TermColor.h"
 
 #define DEBUG
 
@@ -65,20 +65,9 @@ void pose_callback(const nav_msgs::OdometryConstPtr &pose_msg)
 {
     m_buf.lock();
     pose_buf.push(pose_msg);
-//    cout<<TermColor::iGREEN()<<"pose_msgs: "<<pose_msg->header.stamp<<TermColor::RESET()<<endl;
     m_buf.unlock();
 }
 
-void detec_callback(const sensor_msgs::ImageConstPtr &img_msg)
-{
-//    cv::Mat image = getImageFromMsg(img_msg);
-//    cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/bboxes_image/";
-//    cv::String savedfilename_;
-//    savedfilename_ = dest_ + std::to_string(img_msg->header.seq) + ".jpg";
-//    cout<<"img_msg->header.frame_id = "<<img_msg->header.frame_id<<endl;
-//    cout<<"savedfilename = "<<savedfilename_<<endl;
-//    cv::imwrite(savedfilename_, image);
-}
 
 cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &msg){
     cv_bridge::CvImagePtr cv_ptr;
@@ -150,10 +139,12 @@ void sync_process()
                     pFrame->rgb_image_ = image;
                     pFrame->bboxes_ = frame_bboxes;
                     pFrame->T_c_w_ = Sophus::SE3(q,t);
-
-                    vo->addFrame(pFrame);
                     __DEBUG__( ROS_INFO("curr frame id is %ld", pFrame->id_);)
-                }else{
+                    vo->addFrame(pFrame);
+
+                }
+                else
+                {
                     ROS_WARN("bboxes aliasing!! pop bboxes");
                     frame_bboxes_buf.pop();
 //                    continue;
@@ -209,9 +200,9 @@ int main(int argc, char** argv)
 //    message_filters::Subscriber<nav_msgs::Odometry> camera_pose_sub(nh, camera_pose_topic, 100);
     ros::Subscriber sub_pose = nh.subscribe(camera_pose_topic, 100, pose_callback);
 
-    string detection_image_topic = string("/darknet_ros/detection_image");
-    ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());
-    ros::Subscriber sub_detec = nh.subscribe(detection_image_topic, 100, detec_callback);
+//    string detection_image_topic = string("/darknet_ros/detection_image");
+//    ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());
+//    ros::Subscriber sub_detec = nh.subscribe(detection_image_topic, 100, detec_callback);
 
     std::thread sync_thread{sync_process};
 #ifdef DEBUG

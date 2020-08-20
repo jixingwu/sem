@@ -9,7 +9,6 @@
 #include "Object_landmark.h"
 #include "detect_3d_cuboid/detect_3d_cuboid.h"
 #include "darknet_ros_msgs/BoundingBoxes.h"
-#include "mapcube.h"
 class MapCube;
 class Frame
 {
