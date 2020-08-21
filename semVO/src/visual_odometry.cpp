@@ -321,7 +321,7 @@ void VisualOdometry::cubeMatching()
         Vector2d refBboxesXYmin = refBboxesXY.head(2), refBboxesXYmax = refBboxesXY.head(2) + refBboxesXY.tail(2);
         __DEBUG_MATCH__(
                 cout<<"refBboxesXYmin: "<<refBboxesXYmin<<"\n refBbboxesXYmax: "<<refBboxesXYmax<<endl;
-                cout<<"ref_ T_c_w: "<<ref_->T_c_w_<<"\n curr_ T_c_w: "<<curr_->T_c_w_<<endl;
+                cout<<"ref_ T_c_w: "<<ref_->T_c_w_.log()<<"\n curr_ T_c_w: "<<curr_->T_c_w_.log()<<endl;
         )
 
         auto *camera_ = new Camera();
@@ -364,12 +364,12 @@ void VisualOdometry::cubeMatching()
                     cv::rectangle(curr_->rgb_image_, _currRect, cv::Scalar(0,255,0), 5, cv::LINE_8, 0);
 //                    cv::imshow("curr_ image", ref_->rgb_image_);
 //                    cv::waitKey(300);
-                    saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", curr_->rgb_image_, simMatrixN, "curr image" );
+                    saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", curr_->rgb_image_, simMatrixN+1, "curr image" );
                     )
 
             Vector4d currBboxesXY = curr_->local_cuboids_[simMatrixN]->bbox_vec_; // ordinary
             string currBboxesClass = curr_->local_cuboids_[simMatrixN]->object_class; // Class
-
+            
             //// check whether ref bboxes is in the image
             if(!isBboxesInImage(refBboxesXY, ref_->rgb_image_) || !isBboxesInImage(currBboxesXY, curr_->rgb_image_))
             {

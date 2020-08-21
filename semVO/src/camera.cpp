@@ -36,7 +36,15 @@ Vector2d Camera::camera2pixel(const Vector3d &p_c) {
             );
 }
 
-Vector3d Camera::pixel2camera(const Vector2d &p_p, double depth) {
+Vector3d Camera::pixel2camera(const Vector2d &p_p, const SE3& T_c_w) {
+    Matrix3d inMatrix;
+    inMatrix<< fx_, 0, cx_, 0, fy_, cy_, 0, 0 ,1;
+    Matrix3d R = T_c_w.rotation_matrix();
+    Vector3d t = T_c_w.translation();
+
+    double depth = calDepth(p_p, R, t, inMatrix);
+//    cout<<"Depth: "<<depth<<endl;
+
     return Vector3d (
             ( p_p ( 0,0 )-cx_ ) *depth/fx_,
             ( p_p ( 1,0 )-cy_ ) *depth/fy_,
@@ -47,7 +55,15 @@ Vector2d Camera::world2pixel(const Vector3d &p_w, const SE3 &T_c_w) {
     return camera2pixel( world2camera(p_w, T_c_w));
 }
 
-Vector3d Camera::pixel2world ( const Vector2d& p_p, const SE3& T_c_w, double depth )
+Vector3d Camera::pixel2world ( const Vector2d& p_p, const SE3& T_c_w )
 {
-    return camera2world ( pixel2camera ( p_p, depth ), T_c_w );
+    return camera2world ( pixel2camera ( p_p, T_c_w ), T_c_w );
+}
+
+double Camera::calDepth(const Vector2d &p_p, Matrix3d R, Vector3d t, Matrix3d inMatrix)
+{
+    Vector3d p_p_q(p_p(0), p_p(1), 1);
+    Vector3d rightMatrix = R.inverse()*inMatrix.inverse()*p_p_q;
+    Vector3d leftMatrix = R.innerStride()*t;
+    return leftMatrix(2,0)/rightMatrix(2,0);
 }
