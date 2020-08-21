@@ -42,6 +42,8 @@ include_directories(${Sophus_INCLUDE_DIRS})
 #find_package(G2O REQUIRED)
 #include_directories(${G2O_INCLUDE_DIRS})
 
+include_directories(${PROJECT_SOURCE_DIR}/include)
+
 catkin_package(
         INCLUDE_DIRS
         CATKIN_DEPENDS
@@ -68,18 +70,14 @@ add_library(cube_vo_lib
         src/line_lbd/line_lbd_allclass.cpp
         src/line_lbd/lsd.cpp
         src/line_lbd/LSDDetector.cpp
-        #src/Frame.cpp
-        src/landmark.cpp
-        src/map_drawer.cpp
         src/TopoMetric.cpp
-        src/feature_tracker.cpp
-        src/estimator.cpp
 
         #vo
         src/camera.cpp
         src/config.cpp
         src/frame.cpp
         src/map.cpp
+        src/mapcube.cpp
         src/visual_odometry.cpp
     )
 

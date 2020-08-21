@@ -92,13 +92,12 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
             // OUTPUT: frame_cuboids as a 'vector<ObjectSet>' type
             // equal to extractKeyPoints() and computeDescriptors()
             generateCubeProposal();
-            addKeyFrame();// the first frame is a key-frame
+//            addKeyFrame();// the first frame is a key-frame
             break;
         }
         case OK:
         {
-            curr_ = frame;
-            curr_->T_c_w_ = ref_->T_c_w_;//讲当前帧pose设置为上一帧pose
+            curr_ = frame;// 当前帧更新
             generateCubeProposal();
             cubeMatching();// equal to featureMatching();
             // TODO:估计相机pose poseEstimationPnP() to 将vins的camera pose与initTransToWorld相乘；
@@ -116,6 +115,7 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
 //                }
 //                return false;
 //            }
+            ref_ = curr_;
             break;
         }
         case LOST:
@@ -128,7 +128,7 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
     return true;
 }
 
-#define __DEBUG__(msg) msg;
+
 bool VisualOdometry::isBboxesInImage(Vector4d v, cv::Mat image)
 {
     int img_width = image.cols;
@@ -139,9 +139,11 @@ bool VisualOdometry::isBboxesInImage(Vector4d v, cv::Mat image)
         return false;
 
 }
+#define __DEBUG__(msg) ;
+#define __DEBUG_GENERATE__(msg) msg;
 void VisualOdometry::generateCubeProposal()
 {
-    __DEBUG__(cout<< TermColor::iBLUE() <<"starting detecting cubes ..."<<endl;)
+    __DEBUG_GENERATE__(cout<< TermColor::iBLUE() <<"starting detecting cubes ..."<<endl;)
     const cv::Mat &raw_rgb_image = curr_->rgb_image_;
     const darknet_ros_msgs::BoundingBoxes frame_bboxes = *curr_->bboxes_;
 
@@ -150,10 +152,10 @@ void VisualOdometry::generateCubeProposal()
 //    Kalib(0,2) = ref_->camera_->cx_;
 //    Kalib(1,1) = ref_->camera_->fy_;
 //    Kalib(1,2) = ref_->camera_->cy_;
-    Kalib(0,0) = 718.856;
-    Kalib(1,1) = 718.856;
-    Kalib(0,2) = 607.1928;
-    Kalib(1,2) = 185.2157;
+    Kalib(0,0) = 718.856;//fx
+    Kalib(1,1) = 718.856;//fy
+    Kalib(0,2) = 607.1928;//cx
+    Kalib(1,2) = 185.2157;//cy
     detect_cuboid_obj->set_calibration(Kalib);
 
     // edge detection
@@ -292,13 +294,14 @@ void VisualOdometry::generateCubeProposal()
     }
 
     __DEBUG__(cout<<"curr_.local_cuboids_.size(): "<<curr_->local_cuboids_.size()<<endl;)
-    __DEBUG__(cout<<"ending detection ..."<<TermColor::RESET()<<endl;)
+    __DEBUG_GENERATE__(cout<<"ending detection ..."<<TermColor::RESET()<<endl;)
 
 }
 #define __DEBUG_MATCH__(msg) msg;
 void VisualOdometry::cubeMatching()
 {
     __DEBUG_MATCH__(cout<<TermColor::iRED()<<"staring matching cubes ..."<<endl;)
+    __DEBUG_MATCH__(cout<<"curr_ frame id: "<< curr_->id_<<endl;)
 
     int M = ref_->local_cuboids_.size(), N = curr_->local_cuboids_.size();
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> simMatrix;
@@ -309,19 +312,77 @@ void VisualOdometry::cubeMatching()
     __DEBUG_MATCH__(cout<<"M: "<<M<<"\t N: "<<N<<endl;)
     for (int simMatrixM = 0; simMatrixM < M; ++simMatrixM)
     {
-        Vector4d refBboxes = ref_->local_cuboids_[simMatrixM]->bbox_vec_;// xmin ymin  width height
+        Vector4d refBboxesXY = ref_->local_cuboids_[simMatrixM]->bbox_vec_;// xmin ymin  width height
+        string refBboxesClass = ref_->local_cuboids_[simMatrixM]->object_class; // Class
+        __DEBUG_MATCH__(cout<<"ref_ bboxes"<< refBboxesXY <<endl;)
+
+        //TODO: 添加运动约束
+        //// ref_中的bboxes的像素坐标系下的(xmin, ymin)，映射到curr_的世界坐标系下，得到refPixel2CurrWorld
+        Vector2d refBboxesXYmin = refBboxesXY.head(2), refBboxesXYmax = refBboxesXY.head(2) + refBboxesXY.tail(2);
+        __DEBUG_MATCH__(
+                cout<<"refBboxesXYmin: "<<refBboxesXYmin<<"\n refBbboxesXYmax: "<<refBboxesXYmax<<endl;
+                cout<<"ref_ T_c_w: "<<ref_->T_c_w_<<"\n curr_ T_c_w: "<<curr_->T_c_w_<<endl;
+        )
+
+        auto *camera_ = new Camera();
+        Vector3d refPixel2CurrWorldXYmin = camera_->pixel2world(refBboxesXYmin, ref_->T_c_w_);
+        Vector2d currWorld2CurrPixelXYmin = camera_->world2pixel(refPixel2CurrWorldXYmin, curr_->T_c_w_);
+        Vector3d refPixel2CurrWorldXYmax = camera_->pixel2world(refBboxesXYmax, ref_->T_c_w_);
+        Vector2d currWorld2CurrPixelXYmax = camera_->world2pixel(refPixel2CurrWorldXYmax, curr_->T_c_w_);
+
+        __DEBUG_MATCH__(
+                cout<<"refBboxesXY(xmin, ymin, width, height) in ref frame: "<<refBboxesXY<<endl;
+        )
+
+        Vector4d _currBboxesXY;
+        Vector2d _currBboxesWH = currWorld2CurrPixelXYmax - currWorld2CurrPixelXYmin;
+        _currBboxesXY = Vector4d(currWorld2CurrPixelXYmin(0),currWorld2CurrPixelXYmin(1),
+                                 _currBboxesWH(0), _currBboxesWH(1));
+        __DEBUG_MATCH__(
+                cout<<" _currBboxesXY(xmin, ymin, width, height) in curr frame: "<<_currBboxesXY<<endl;
+                )
+        __DEBUG_MATCH__(
+                cvNamedWindow("ref image");
+                cvMoveWindow("ref image", 20, 300);
+                cv::rectangle(ref_->rgb_image_, ref_->local_cuboids_[simMatrixM]->bbox_2d_,
+                              cv::Scalar(255,0,0), 5, cv::LINE_8, 0);
+//                cv::imshow("ref image", ref_->rgb_image_);
+//                cv::waitKey(300);
+                saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/0/",ref_->rgb_image_, simMatrixM, "ref image");
+                )
+        // TODO: _currBboxesXY match with currBboxesXY
+        //// @param _currBboxesXY    ref帧中的bboxes映射到curr帧中的参数
+        //// @param currBboxesXY    curr帧中的每个bboxes
         for (int simMatrixN = 0; simMatrixN < N; ++simMatrixN)
         {
-            Vector4d curBboxes = curr_->local_cuboids_[simMatrixN]->bbox_vec_;
-            if(!isBboxesInImage(refBboxes, ref_->rgb_image_) || !isBboxesInImage(curBboxes, curr_->rgb_image_))
+            __DEBUG_MATCH__(
+                    cvNamedWindow("curr_ image");
+                    cvMoveWindow("curr_ image", 20, 300);
+//                    cv::rectangle(curr_->rgb_image_, curr_->local_cuboids_[simMatrixN]->bbox_2d_,
+//                                  cv::Scalar(255,0,0), 1, cv::LINE_8, 0);
+                    cv::Rect _currRect(_currBboxesXY(0), _currBboxesXY(1), _currBboxesXY(2), _currBboxesXY(3));
+                    cv::rectangle(curr_->rgb_image_, _currRect, cv::Scalar(0,255,0), 5, cv::LINE_8, 0);
+//                    cv::imshow("curr_ image", ref_->rgb_image_);
+//                    cv::waitKey(300);
+                    saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", curr_->rgb_image_, simMatrixN, "curr image" );
+                    )
+
+            Vector4d currBboxesXY = curr_->local_cuboids_[simMatrixN]->bbox_vec_; // ordinary
+            string currBboxesClass = curr_->local_cuboids_[simMatrixN]->object_class; // Class
+
+            //// check whether ref bboxes is in the image
+            if(!isBboxesInImage(refBboxesXY, ref_->rgb_image_) || !isBboxesInImage(currBboxesXY, curr_->rgb_image_))
+            {
+                ROS_WARN("ref bboxes is not in the image");
                 continue;
+            }
 
             double error;
-            //TODO: 添加运动约束
             if(ref_->local_cuboids_[simMatrixM]->object_class == curr_->local_cuboids_[simMatrixN]->object_class)
             {
-
-                error = Vector4d(refBboxes - curBboxes).norm();//分量平方和的平方根
+                // TODO: xmin, ymin, width, height的范数，不一定在相同数量级内
+                // 相对误差 = (_x - x)/x
+                error = Vector4d(_currBboxesXY - currBboxesXY).cwiseQuotient(currBboxesXY).norm();//分量平方和的平方根
                 simMatrix(M, N) = exp(-1 * error);
             }
             else
@@ -347,3 +408,14 @@ void VisualOdometry::cubeMatching()
 
 }
 
+void VisualOdometry::saveImage(cv::String dest, cv::Mat image, size_t id, std::string imageName)
+{
+//    cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
+    cv::String savedfilename_;
+    char frame_index[256];
+    sprintf(frame_index,"%06lu", id);
+    savedfilename_ = dest + frame_index + ".jpg";
+    cout<<"save "<<imageName<<"image into "<<dest<<endl;
+    cout<<"file name is: "<<savedfilename_<<endl;
+    cv::imwrite(savedfilename_, image);
+}

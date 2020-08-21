@@ -55,7 +55,8 @@ public:
     void test();
 
     void inputSimMatrix(Eigen::MatrixXd& sim_mat, Eigen::MatrixXd& sim_results);
-private:
+
+public:
     // calculate affinity of two nodes
 //    double calAffinityOfTwoNode(NodeT* nc1, NodeT* nc2);
 

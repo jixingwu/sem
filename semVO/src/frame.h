@@ -25,14 +25,14 @@ public:
     darknet_ros_msgs::BoundingBoxesConstPtr bboxes_;
 
     // cube parameter
-    int                             cube_num_; // cube number of this frame
+    int                             cube_num_{}; // cube number of this frame
     std::vector<ObjectSet*>         frame_cuboids_; // cube raw proposal, 处理前的cube，由多个cuboid类型组成
     std::vector<MapCube*>           local_cuboids_;// cube sequence of this frame, 处理后的cube类型，该类型可用于构建SemMap
     std::vector<object_landmark*>   observed_cuboids_;// cube sequence of this frame
 
 public:
     Frame();
-    Frame(long id, double time_stamp=0, SE3 T_c_w=SE3(), Camera::Ptr camera=nullptr, Mat color=Mat(), Mat depth=Mat() );
+    explicit Frame(long id, double time_stamp=0, const SE3& T_c_w=SE3(), Camera::Ptr camera=nullptr, Mat color=Mat(), Mat depth=Mat() );
     ~Frame();
 
     static Frame::Ptr createFrame();

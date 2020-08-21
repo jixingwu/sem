@@ -60,6 +60,8 @@ public:
     VOState             state_; // current VO status
     SemMap::Ptr         map_;   // map with all frames and map points
 
+
+
     Frame::Ptr          ref_;// = new Frame();   // reference key-frame
     Frame::Ptr          curr_;  // current frame
 
@@ -107,6 +109,8 @@ public:
 
     void generateCubeProposal();
     void addKeyFrame();
+
+    void saveImage(cv::String dest, cv::Mat image, size_t id, std::string imageName);
 
     /* cubeMatching()
      * 功能：对ref和curr中提取到的cube进行匹配，输出一对匹配到的cube和对应的index
