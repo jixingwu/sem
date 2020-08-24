@@ -20,10 +20,17 @@ void Node_c::setxyzid(float _x, float _y, float _z, int _id_self)
     id_self = _id_self;
 }
 
-void Node_c::addLink(int _id_neibor, Node_c* _node_neibor, float _dist)
+void Node_c::setxyzid(Eigen::Vector3d _xyz, int _id_self)
+{
+    xyz = _xyz;
+    norm = xyz.norm();
+    id_self = _id_self;
+}
+
+void Node_c::addLink(int _id_neibor, float _dist)//, Node_c* _node_neibor
 {
     id_neibor.push_back(_id_neibor);
-    node_neibor.push_back(_node_neibor);
+    // node_neibor.push_back(_node_neibor);
     visited_neibor.push_back(false);
     dist_neibor.push_back(_dist);
 }
@@ -33,7 +40,7 @@ void Node_c::removeLink(int _id_neibor)
     for(int i=0; i<id_neibor.size(); ++i){
         if(_id_neibor == id_neibor[i]){
             id_neibor.erase(id_neibor.begin()+i);
-            node_neibor.erase(node_neibor.begin()+i);
+            // node_neibor.erase(node_neibor.begin()+i);
             visited_neibor.erase(visited_neibor.begin()+i);
             break;
         }
@@ -42,6 +49,7 @@ void Node_c::removeLink(int _id_neibor)
 
 
 TopoMetric_c::TopoMetric_c(string _frame_id):
+    id_near_zero_node(0), size_confirm_nodes(1),
     x_upb(FLT_MIN), x_lowb(FLT_MAX),
     y_upb(FLT_MIN), y_lowb(FLT_MAX),
     z_upb(FLT_MIN), z_lowb(FLT_MAX)
@@ -49,23 +57,54 @@ TopoMetric_c::TopoMetric_c(string _frame_id):
     frame_id = _frame_id;
 }
 
+void TopoMetric_c::saveGraph(string fname)
+{
+    ofstream outnode(fname+"_node.txt"), outedge(fname+"_edge.txt");
+
+    for(int i=0; i<nodes_vec.size(); ++i)
+    {
+        if(i == size_confirm_nodes){
+            outnode <<endl;
+            // separate confirm nodes
+        }
+        outnode << nodes_vec[i].xyz(0) <<" "<< nodes_vec[i].xyz(1)
+                <<" "<< nodes_vec[i].xyz(2) <<endl;
+        for(int j=0; j<nodes_vec[i].id_neibor.size(); ++j)
+        {
+            int idneibor = nodes_vec[i].id_neibor[j];
+            if(idneibor > i){
+                outedge << i << " "  << idneibor <<endl;
+            }
+        }
+    }
+
+    outnode.close();
+    outedge.close();
+}
+
 bool TopoMetric_c::readAndContructTopoMetric(const string& filepath)
 {
     nodes_vec.clear();
+    file_path = filepath;
     string nodefile = filepath+"node.txt",
            edgefile = filepath+"edge.txt";
+    Node_c nc(0,0,0,0);
 
     // read nodes
     ifstream in(nodefile);
     if(!in){
+        nodes_vec.push_back(nc);
         printf("[topometric]no node file!\n");
         return false;
     }
     string line;
     boost::char_separator<char> sep(" ");
-    Node_c nc(0,0,0,0);
     float x,y,z;
     int i=0,j=0;
+    double min_zero_norm = 5.0;
+    Eigen::VectorXd min_norms = Eigen::VectorXd::Constant(bcnode_xyz_vec.size(), 10.0);
+    Eigen::VectorXi id_near_backup_node = Eigen::VectorXi::Constant(bcnode_xyz_vec.size(), -1);
+    // id_near_zero_node = 0; //near zero node id
     while (!in.eof())
     {
         std::getline(in, line);
@@ -78,6 +117,19 @@ bool TopoMetric_c::readAndContructTopoMetric(const string& filepath)
         z = boost::lexical_cast<float>(tokens[2]);
 
         nc.setxyzid(x, y, z, i);
+        for(int bc_i=0; bc_i<bcnode_xyz_vec.size(); ++bc_i)
+        {
+            double dist_center = (nc.xyz - bcnode_xyz_vec[bc_i]).norm();
+            if(dist_center < min_norms(bc_i)){
+                min_norms(bc_i) = dist_center;
+                id_near_backup_node(bc_i) = nodes_vec.size();
+            }
+        }
+        if(nc.norm < min_zero_norm){
+            min_zero_norm = nc.norm;
+            id_near_zero_node = i;
+        }
+        
         nodes_vec.push_back(nc);
         if(x > x_upb){
             x_upb = x;
@@ -97,10 +149,14 @@ bool TopoMetric_c::readAndContructTopoMetric(const string& filepath)
         else if(z < z_lowb){
             z_lowb = z;
         }
-//        cout<<x<<" "<<y<<" "<<z<<" "<<i<<endl;
+//        cout<<"[TM]read node:"<<x<<" "<<y<<" "<<z<<" "<<i<<endl;
         ++i;
     }
+    if(nodes_vec.size() == 0){
+        nodes_vec.push_back(nc);
+    }
     in.close();
+    size_confirm_nodes = nodes_vec.size();
 
     //read edges
     ifstream in1(edgefile);
@@ -108,6 +164,10 @@ bool TopoMetric_c::readAndContructTopoMetric(const string& filepath)
         printf("[topometric]no edge file!\n");
         return false;
     }
+    adjacent_mat.resize(nodes_vec.size(), nodes_vec.size());
+    adjacent_mat.setConstant(-1);
+    visited_edge_mat.resize(nodes_vec.size(), nodes_vec.size());
+    visited_edge_mat.setConstant(-1);
     while (!in1.eof())
     {
         std::getline(in1, line);
@@ -119,21 +179,104 @@ bool TopoMetric_c::readAndContructTopoMetric(const string& filepath)
         j = boost::lexical_cast<float>(tokens[1]);
         float _dist = (nodes_vec[i].xyz - nodes_vec[j].xyz).norm();
 
-        nodes_vec[i].addLink(j, &(nodes_vec[j]), _dist);
-        nodes_vec[j].addLink(i, &(nodes_vec[i]), _dist);
-//        cout<<i<<" "<<j<<" "<<_dist<<endl;
+        nodes_vec[i].addLink(j, _dist);//, &(nodes_vec[j])
+        nodes_vec[j].addLink(i, _dist);//, &(nodes_vec[i])
+        adjacent_mat(i,j) = _dist;
+        adjacent_mat(j,i) = _dist;
+        visited_edge_mat(i, j) = 1;
+        visited_edge_mat(j, i) = 1;
+//        cout<<"[TM]read edge:"<<i<<" "<<j<<" "<<_dist<<endl;
     }
     in1.close();
-    cout<<"[topometric]read "<<filepath<<" node and edge file done!"<<endl;
+    cout<<"[topometric]read "<<filepath<<" node and edge file done!"
+    <<" number of nodes is " << nodes_vec.size() <<endl;
 
+    // multiple nodes back up
+    for(int bc_i=0; bc_i<bcnode_xyz_vec.size(); ++bc_i)
+    {
+        // remove back up nodes
+        // nodes with back up
+        int id_cnode = id_near_backup_node(bc_i);
+        // update position of back up center
+        Eigen::Vector3d center_xyz = nodes_vec[id_cnode].xyz;
+        bcnode_xyz_vec[bc_i] = center_xyz;
+//        cout<< "check node "<<id_cnode<<" ("<<center_xyz(0)<<","<<center_xyz(1)<<","<<center_xyz(2)<<endl;
+        for(int nei_i=0; nei_i<bcneibor_xyz_vecs[bc_i].size(); ++nei_i)
+        {
+            // xyz of back up neibors
+            Eigen::Vector3d xyz1 = bcneibor_xyz_vecs[bc_i][nei_i];
+            for(int j=0; j<nodes_vec[id_cnode].id_neibor.size(); ++j)
+            {
+                // read neibors
+                Eigen::Vector3d xyz2 = nodes_vec[nodes_vec[id_cnode].id_neibor[j]].xyz - center_xyz;
+                double costheta = xyz1.dot(xyz2) / xyz2.norm() / xyz1.norm();
+//                cout<<" ("<<xyz1(0)<<","<<xyz1(1)<<","<<xyz1(2)<<")--("<<xyz2(0)<<","<<xyz2(1)<<","<<xyz2(2)
+//                   <<"), theta: "<<costheta<<endl;
+                if(costheta > 0.9){
+                    // angle between back up and exist node to middle node is smaller than about 22 degree
+                    bcneibor_xyz_vecs[bc_i].erase(bcneibor_xyz_vecs[bc_i].begin()+nei_i);
+                    --nei_i;
+                    break;
+                }
+            }
+        }
+
+        // add back up nodes
+        for(int nei_i=0; nei_i<bcneibor_xyz_vecs[bc_i].size(); ++nei_i)
+        {
+            Eigen::Vector3d xyz1 = bcneibor_xyz_vecs[bc_i][nei_i] + center_xyz;
+            int idtmp = nodes_vec.size();
+            nc.setxyzid(xyz1(0), xyz1(1), xyz1(2), idtmp);
+            nodes_vec.push_back(nc);
+            double _dist = xyz1.norm();
+            nodes_vec[idtmp].addLink(id_cnode, _dist);
+            nodes_vec[id_cnode].addLink(idtmp, _dist);
+        }
+    }
+/*
+    // only zero node back up
+    // remove back up nodes
+    for(int i=0; i<zero_neibor_xyz_vec.size(); ++i)
+    {
+        Eigen::Vector3d xyz1 = zero_neibor_xyz_vec[i];
+        for(int j=0; j<nodes_vec[id_near_zero_node].id_neibor.size(); ++j)
+        {
+            Eigen::Vector3d xyz2 = nodes_vec[nodes_vec[id_near_zero_node].id_neibor[j]].xyz;
+            double costheta = xyz1.dot(xyz2) / nodes_vec[nodes_vec[id_near_zero_node].id_neibor[j]].norm / xyz1.norm();
+            if(costheta > 0.9){
+                // angle between back up and exist node to zero node is smaller than about 22 degree
+                zero_neibor_xyz_vec.erase(zero_neibor_xyz_vec.begin()+i);
+                --i;
+                break;
+            }
+        }
+    }
+    // add back up nodes
+    for(int i=0; i<zero_neibor_xyz_vec.size(); ++i)
+    {
+        int idtmp = nodes_vec.size();
+        nc.setxyzid(zero_neibor_xyz_vec[i](0), zero_neibor_xyz_vec[i](1), zero_neibor_xyz_vec[i](2), idtmp);
+        nodes_vec.push_back(nc);
+        double _dist = zero_neibor_xyz_vec[i].norm();
+        nodes_vec[idtmp].addLink(id_near_zero_node, _dist);
+        nodes_vec[id_near_zero_node].addLink(idtmp, _dist);
+    }
+*/
     return true;
+}
+
+void TopoMetric_c::initZeroNode(float _x, float _y, float _z, int _id)
+{
+    cout<<"[topometric]init zero node."<<endl;
+    Node_c nc(_x, _y, _z, _id);
+    nodes_vec.push_back(nc);
 }
 
 int TopoMetric_c::searchNearestNode(Eigen::Vector3d _xyz)
 {
     double nearest_dist = 100000, tmpdist;
     int nearest_id = -1;
-    for(int id=0; id<nodes_vec.size(); ++id)
+    for(int id=0; id<size_confirm_nodes; ++id)
     {
         tmpdist = (nodes_vec[id].xyz - _xyz).norm();
         if(tmpdist < nearest_dist){
@@ -151,12 +294,295 @@ int TopoMetric_c::searchNearbyNode(Eigen::Vector3d _xyz, int id_initnode)
     int nearest_id = id_initnode;
     for(int neibor=0; neibor<nodes_vec[id_initnode].id_neibor.size(); ++neibor)
     {
-        tmpdist = (nodes_vec[id_initnode].node_neibor[neibor]->xyz - _xyz).norm();
+        Eigen::Vector3d tmpxyz = nodes_vec[nodes_vec[id_initnode].id_neibor[neibor]].xyz;
+        tmpdist = (tmpxyz - _xyz).norm();//nodes_vec[id_initnode].node_neibor[neibor]->xyz
         // to judge whether it is reaching next node, the distance should be smaller than 1m
         if(tmpdist < 1.0 && tmpdist < nearest_dist){
             nearest_dist = tmpdist;
-            nearest_id = neibor;
+            nearest_id = nodes_vec[id_initnode].id_neibor[neibor];
         }
     }
     return nearest_id;
+}
+
+void TopoMetric_c::splitNodesByNeibor(vector<int> nodes, vector<vector<int> > &split_nodes, int min_group_size)
+{
+    vector<int> one_group;
+    for(int i=0; i<nodes.size(); ++i)
+    {
+        if(nodes[i] < 0) continue;
+        one_group.clear();
+        findGroupNodes(nodes, i, one_group);
+        if(one_group.size() < min_group_size) continue;
+        split_nodes.push_back(one_group);
+    }
+}
+
+void TopoMetric_c::findGroupNodes(vector<int> &nodes, int index_in_vec, vector<int> &one_group)
+{
+//    cout<<"start group nodes"<<endl;
+    one_group.push_back(nodes[index_in_vec]);
+//    cout<<nodes[index_in_vec]<<", ";
+    int ind_one_group = 0;
+    while(ind_one_group < one_group.size())
+    {
+        for(int i=index_in_vec+1; i<nodes.size(); ++i)
+        {
+            if(nodes[i] < 0) continue;
+            if(adjacent_mat(one_group[ind_one_group], nodes[i]) > 0){
+                one_group.push_back(nodes[i]);
+//                cout<<nodes[i]<<", ";
+                nodes[i] = -1;
+            }
+        }
+        ++ind_one_group;
+    }
+//    cout<<endl;
+}
+
+void TopoMetric_c::modifyNode(int _id, Eigen::Vector3d _new_xyz)
+{
+    nodes_vec[_id].xyz = _new_xyz;
+    nodes_vec[_id].norm = _new_xyz.norm();
+    for(int i=0; i<nodes_vec[_id].id_neibor.size(); ++i)
+    {
+        int id_neibor = nodes_vec[_id].id_neibor[i];
+        float dist = (_new_xyz - nodes_vec[id_neibor].xyz).norm();
+        nodes_vec[_id].dist_neibor[i] = dist;
+//        adjacent_mat(id_neibor, _id) = dist;
+//        adjacent_mat(_id, id_neibor) = dist;
+        for(int j=0; j<nodes_vec[id_neibor].id_neibor.size(); ++j)
+        {
+            if(_id == nodes_vec[id_neibor].id_neibor[j]){
+                nodes_vec[id_neibor].dist_neibor[j] = dist;
+                break;
+            }
+        }
+    }
+}
+
+void TopoMetric_c::setVisitedEdge(int id_node_1, int id_node_2)
+{
+    if(visited_edge_mat(id_node_1, id_node_2) > 0){
+        visited_edge_mat(id_node_1, id_node_2) = 2;
+        visited_edge_mat(id_node_2, id_node_1) = 2;
+    }
+}
+
+bool TopoMetric_c::edgeExist(int id1, int id2)
+{
+    return (visited_edge_mat(id1,id2) > 0);
+}
+
+double TopoMetric_c::getDistance(int id1, int id2)
+{
+    return (nodes_vec[id1].xyz - nodes_vec[id2].xyz).norm();
+}
+
+bool TopoMetric_c::isEdgeVisited(int id_node_1, int id_node_2)
+{
+    if(visited_edge_mat(id_node_1, id_node_2) > 1){
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+void TopoMetric_c::resetEdgeStatus()
+{
+    for(int i=0; i<nodes_vec.size(); ++i)
+    {
+        for(int j=i+1; j<nodes_vec.size(); ++j)
+        {
+            if(visited_edge_mat(i, j) > 0){
+                visited_edge_mat(i, j) = 1;
+                visited_edge_mat(j, i) = 1;
+            }
+        }
+    }
+}
+
+bool TopoMetric_c::Dijkstra(int _id_start, vector<int>& near_to_far_nodes)
+{
+    cout<<"[TM]search path from node "<<_id_start<<endl;
+    if(_id_start < 0 || _id_start >= nodes_vec.size()){
+        cout<<"[TM]node id out of range [0, "<<nodes_vec.size()<<")."<<endl;
+        return false;
+    }
+    // init
+    id_start = _id_start;
+    dist_to_start.resize(nodes_vec.size());
+    id_from_where.resize(nodes_vec.size());
+    id_from_where.setConstant(-1);
+    Eigen::VectorXi id_dealed;
+    id_dealed.resize(nodes_vec.size());
+    id_dealed.setConstant(-1);
+
+    vector<int> nodeQueue;
+    id_from_where(id_start) = id_start;
+    dist_to_start(id_start) = 0;
+    id_dealed(id_start) = 1;
+    nodeQueue.push_back(id_start);
+
+    int id_now, id_next;
+    float dtn_tmp;
+    while(!nodeQueue.empty())
+    {
+        id_now = nodeQueue[nodeQueue.size()-1];
+
+        nodeQueue.pop_back();
+        near_to_far_nodes.push_back(id_now);
+        // cout<<"dijk id: "<<id_now<<", dist: "<<dist_to_start(id_now)<<endl;
+
+        for(int i=0; i<nodes_vec[id_now].id_neibor.size(); ++i)
+        {
+            id_next = nodes_vec[id_now].id_neibor[i];
+
+            if(id_next == id_from_where(id_now)) continue;
+
+            // visited_edge_mat, if this edge is visited, going back again is not recommended
+            if(id_dealed(id_next) <= 0)
+            {
+                dist_to_start(id_next) = dist_to_start(id_now) + visited_edge_mat(id_now, id_next) * nodes_vec[id_now].dist_neibor[i];
+                id_from_where(id_next) = id_now;
+                id_dealed(id_next) = 1;
+
+                insertSortByDistTotal(id_next, nodeQueue, dist_to_start);
+            }
+            else
+            {
+                dtn_tmp = dist_to_start(id_now) + visited_edge_mat(id_now, id_next) * nodes_vec[id_now].dist_neibor[i];
+                if(dtn_tmp < dist_to_start(id_next))
+                {
+                    dist_to_start(id_next) = dtn_tmp;
+                    id_from_where(id_next) = id_now;
+
+                    int j=0;
+                    //erase from queue and re-add into queue
+                    for(j=0; j<nodeQueue.size(); ++j)
+                    {
+                        if(nodeQueue[j] == id_next)
+                        {
+                            nodeQueue.erase(nodeQueue.begin()+j);
+                            insertSortByDistTotal(id_next, nodeQueue, dist_to_start);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    cout<<"[TM]dijkstra done."<<endl;
+    return true;
+}
+
+void TopoMetric_c::getPathFromDijkstra(int _id_end, vector<int>& path_vec)
+{
+    int id_current = _id_end;
+    path_vec.push_back(id_current);
+    cout<<"[TM]path from "<<_id_end<<" to "<<id_start<<": "<<id_current;
+    while(id_current != id_start)
+    {
+        if(id_current == -1){
+            cout<<"[TM]cannot get path."<<endl;
+            path_vec.clear();
+            break;
+        }
+        id_current = id_from_where(id_current);
+        path_vec.push_back(id_current);
+        cout<<"<-"<<id_current;
+    }
+    cout<<endl;
+}
+
+void TopoMetric_c::insertSortByDistTotal(int _id, vector<int> &_nodeQueue, Eigen::VectorXd value_source)
+{
+    if(_nodeQueue.empty())
+    {
+        _nodeQueue.push_back(_id);
+    }
+    else if(value_source(_id) > value_source(_nodeQueue[0]))
+    {
+        _nodeQueue.insert(_nodeQueue.begin(), _id);
+        // cout<<"insert before begin "<<value_source(_id)<<" "<<value_source(_nodeQueue[0])<<endl;
+    }
+    else if(value_source(_id) < value_source(_nodeQueue[_nodeQueue.size()-1]))
+    {
+        _nodeQueue.push_back(_id);
+        // cout<<"insert after end "<<value_source(_id)<<" "<<value_source(_nodeQueue[_nodeQueue.size()-1])<<endl;
+    }
+    else
+    {
+        int _start=0, _end=_nodeQueue.size()-1, half=0;
+        while((_end-_start)>1)
+        {
+            half = (_end+_start) / 2;
+            if(value_source(_id) > value_source(_nodeQueue[half]) )
+            {
+                _end = half;
+            }
+            else
+            {
+                _start = half;
+            }
+        }
+        _nodeQueue.insert(_nodeQueue.begin()+_end, _id);
+        // cout<<"insert middle"<<endl;
+    }
+    // test cout
+    // cout<<"queue: ";
+    // for(int i=0; i<_nodeQueue.size(); ++i)
+    // {
+    //     cout<<_nodeQueue[i]<<"("<<value_source(_nodeQueue[i])<<")###";
+    // }
+    // cout<<endl;
+}
+
+void TopoMetric_c::backUpNeibor(Eigen::Vector3d node_xyz, vector<Eigen::Vector3d> neibor_xyz_vec)
+{
+    bcnode_xyz_vec.push_back(node_xyz);
+    bcneibor_xyz_vecs.push_back(neibor_xyz_vec);
+    ofstream write(file_path+"backup_pos.txt");
+    cout<<"[TM]back up "<<bcnode_xyz_vec.size()<<" position to "<<file_path<<endl;
+    for(int i=0; i<bcnode_xyz_vec.size(); ++i){
+        write <<bcnode_xyz_vec[i](0)<<" "<<bcnode_xyz_vec[i](1)<<" "<<bcnode_xyz_vec[i](2)<<endl;
+    }
+    write.close();
+}
+
+void TopoMetric_c::showGraphData()
+{
+    cout<<"[topometric]show graph data:(zero node is "<<id_near_zero_node
+       <<", confirmed nodes "<<size_confirm_nodes<<")"<<endl;
+    for(int i=0; i<nodes_vec.size(); ++i)
+    {
+        cout<<"node: "<<i<<"("<<nodes_vec[i].xyz(0)<<","<<nodes_vec[i].xyz(1)<<","<<nodes_vec[i].xyz(2)<<"); neibor: ";
+        for(int j=0; j<nodes_vec[i].id_neibor.size(); ++j)
+        {
+            cout<<nodes_vec[i].id_neibor[j]<<" ";//<<"("<<nodes_vec[i].node_neibor[j]->get_id_self()<<" addr "<<nodes_vec[i].node_neibor[j]<<") ";
+        }
+        cout<<endl;
+    }
+}
+
+
+TopoMetric_c& TopoMetric_c::operator=(const TopoMetric_c& tm)
+{
+    id_near_zero_node = tm.id_near_zero_node;
+    size_confirm_nodes = tm.size_confirm_nodes;
+    bcnode_xyz_vec = tm.bcnode_xyz_vec;
+    bcneibor_xyz_vecs = tm.bcneibor_xyz_vecs;
+    nodes_vec = tm.nodes_vec;
+    adjacent_mat = tm.adjacent_mat;
+    visited_edge_mat = tm.visited_edge_mat;
+    file_path = tm.file_path;
+    z_lowb = tm.z_lowb;
+    z_upb = tm.z_upb;
+    y_lowb = tm.y_lowb;
+    y_upb = tm.y_upb;
+    x_lowb = tm.x_lowb;
+    x_upb = tm.x_upb;
+    file_path = tm.frame_id;
+    return *this;
 }
