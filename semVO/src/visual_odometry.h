@@ -95,6 +95,7 @@ public:
     SE3 InitToGround; // world2camera T_c_w
 
     GraphMatching<TopoMetric_c, Node_c> graphMatching_h;// 用来进行cube匹配构造相似度矩阵
+    bool isCubeMatching = false;
 
 public:
     VisualOdometry();

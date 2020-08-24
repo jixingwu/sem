@@ -100,7 +100,7 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
             curr_ = frame;// 当前帧更新
             generateCubeProposal();
             cubeMatching();// equal to featureMatching();
-            // TODO:估计相机pose poseEstimationPnP() to 将vins的camera pose与initTransToWorld相乘；
+            // matching 后tracking得到的匹配，设置为相同的id
 //             if true, 更新当前帧的pose. if else state_ = LOST;
 //            if(checkReceivedPose())
 //            {
@@ -139,11 +139,11 @@ bool VisualOdometry::isBboxesInImage(Vector4d v, cv::Mat image)
         return false;
 
 }
-#define __DEBUG__(msg) ;
-#define __DEBUG_GENERATE__(msg) msg;
+#define __DEBUG__(msg) msg;
+#define __DEBUG_GENERATE__(msg);
 void VisualOdometry::generateCubeProposal()
 {
-    __DEBUG_GENERATE__(cout<< TermColor::iBLUE() <<"starting detecting cubes ..."<<endl;)
+    __DEBUG__(cout<< TermColor::iBLUE() <<"starting detecting cubes ..."<<endl;)
     const cv::Mat &raw_rgb_image = curr_->rgb_image_;
     const darknet_ros_msgs::BoundingBoxes frame_bboxes = *curr_->bboxes_;
 
@@ -172,7 +172,7 @@ void VisualOdometry::generateCubeProposal()
 
     std::vector<Vector4d> good_object_bbox;
 
-    __DEBUG__(
+    __DEBUG_GENERATE__(
             cout<< "[feature_tracker/DetectCuboid] frame_bboxes size: "<< frame_bboxes.bounding_boxes.size() << endl;
     )
     const int bboxes_length = frame_bboxes.bounding_boxes.size();
@@ -221,7 +221,7 @@ void VisualOdometry::generateCubeProposal()
     Sophus::SE3 frame_pose_to_ground = frame_pose_to_init * InitToGround;
     Matrix4d transToWorld = frame_pose_to_ground.matrix();
 
-    __DEBUG__( cout<< "frame_pose_to_ground_se3(): "<< frame_pose_to_ground.log()<<endl;
+    __DEBUG_GENERATE__( cout<< "frame_pose_to_ground_se3(): "<< frame_pose_to_ground.log()<<endl;
                 cout<<"transToWorld: "<< transToWorld<<endl;)
 
 
@@ -231,7 +231,7 @@ void VisualOdometry::generateCubeProposal()
     detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, v_class, all_lines_raw, all_obj_cubes);
 
     __DEBUG__(
-            cout<<"[tracking/DetectCuboid()] detected all_obj_cubes size: " << all_obj_cubes.size()<<endl;
+//            cout<<"[tracking/DetectCuboid()] detected all_obj_cubes size: " << all_obj_cubes.size()<<endl;
             cvNamedWindow("detect_cuboid_obj->cuboids_2d_img");
             cvMoveWindow("detect_cuboid_obj->cuboids_2d_img", 20, 300);
             cv::imshow("detect_cuboid_obj->cuboids_2d_img",detect_cuboid_obj->cuboids_2d_img);
@@ -293,23 +293,28 @@ void VisualOdometry::generateCubeProposal()
         }
     }
 
-    __DEBUG__(cout<<"curr_.local_cuboids_.size(): "<<curr_->local_cuboids_.size()<<endl;)
-    __DEBUG_GENERATE__(cout<<"ending detection ..."<<TermColor::RESET()<<endl;)
+    __DEBUG__(cout<<"detected cube num: "<<curr_->local_cuboids_.size()<<endl;)
+    __DEBUG_GENERATE__(cout<<"curr_.local_cuboids_.size(): "<<curr_->local_cuboids_.size()<<endl;)
+    __DEBUG__(cout<<"ending detection ..."<<TermColor::RESET()<<endl;)
 
 }
-#define __DEBUG_MATCH__(msg) msg;
+#define __DEBUG_MATCH__(msg) ;
 void VisualOdometry::cubeMatching()
 {
-    __DEBUG_MATCH__(cout<<TermColor::iRED()<<"staring matching cubes ..."<<endl;)
-    __DEBUG_MATCH__(cout<<"curr_ frame id: "<< curr_->id_<<endl;)
+    __DEBUG__(cout<<TermColor::iRED()<<"staring matching cubes ..."<<endl;)
+    __DEBUG__(cout<<"curr_ frame id: "<< curr_->id_<<endl;)
 
     int M = ref_->local_cuboids_.size(), N = curr_->local_cuboids_.size();
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> simMatrix;
     simMatrix.resize(M, N);
 //    simMatrix.Constant(-1);
+    if( min(M, N) <= 0 ){
+        isCubeMatching = false;
+        return;
+    }
 
     //ref_ 去匹配 curr_, 每个M去找N
-    __DEBUG_MATCH__(cout<<"M: "<<M<<"\t N: "<<N<<endl;)
+    __DEBUG__(cout<<"M: "<<M<<"\t N: "<<N<<endl;)
     for (int simMatrixM = 0; simMatrixM < M; ++simMatrixM)
     {
         Vector4d refBboxesXY = ref_->local_cuboids_[simMatrixM]->bbox_vec_;// xmin ymin  width height
@@ -341,32 +346,27 @@ void VisualOdometry::cubeMatching()
         __DEBUG_MATCH__(
                 cout<<" _currBboxesXY(xmin, ymin, width, height) in curr frame: "<<_currBboxesXY<<endl;
                 )
-        __DEBUG_MATCH__(
+        __DEBUG__(
                 cvNamedWindow("ref image");
                 cvMoveWindow("ref image", 20, 300);
-                cv::rectangle(ref_->rgb_image_, ref_->local_cuboids_[simMatrixM]->bbox_2d_,
+                cv::Mat img = ref_->rgb_image_;
+                cv::rectangle(img, ref_->local_cuboids_[simMatrixM]->bbox_2d_,
                               cv::Scalar(255,0,0), 5, cv::LINE_8, 0);
-//                cv::imshow("ref image", ref_->rgb_image_);
-//                cv::waitKey(300);
-                saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/0/",ref_->rgb_image_, simMatrixM, "ref image");
+                saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/0/",img, ref_->id_, "ref image");
                 )
+        __DEBUG__(
+                cvNamedWindow("curr_ image");
+                cvMoveWindow("curr_ image", 20, 300);
+                cv::Rect _currRect(_currBboxesXY(0), _currBboxesXY(1), _currBboxesXY(2), _currBboxesXY(3));
+                img = curr_->rgb_image_;
+                cv::rectangle(img, _currRect, cv::Scalar(0,255,0), 5, cv::LINE_8, 0);
+                saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", img, curr_->id_, "curr image" );
+        )
         // TODO: _currBboxesXY match with currBboxesXY
         //// @param _currBboxesXY    ref帧中的bboxes映射到curr帧中的参数
         //// @param currBboxesXY    curr帧中的每个bboxes
         for (int simMatrixN = 0; simMatrixN < N; ++simMatrixN)
         {
-            __DEBUG_MATCH__(
-                    cvNamedWindow("curr_ image");
-                    cvMoveWindow("curr_ image", 20, 300);
-//                    cv::rectangle(curr_->rgb_image_, curr_->local_cuboids_[simMatrixN]->bbox_2d_,
-//                                  cv::Scalar(255,0,0), 1, cv::LINE_8, 0);
-                    cv::Rect _currRect(_currBboxesXY(0), _currBboxesXY(1), _currBboxesXY(2), _currBboxesXY(3));
-                    cv::rectangle(curr_->rgb_image_, _currRect, cv::Scalar(0,255,0), 5, cv::LINE_8, 0);
-//                    cv::imshow("curr_ image", ref_->rgb_image_);
-//                    cv::waitKey(300);
-                    saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", curr_->rgb_image_, simMatrixN+1, "curr image" );
-                    )
-
             Vector4d currBboxesXY = curr_->local_cuboids_[simMatrixN]->bbox_vec_; // ordinary
             string currBboxesClass = curr_->local_cuboids_[simMatrixN]->object_class; // Class
             
@@ -382,29 +382,40 @@ void VisualOdometry::cubeMatching()
             {
                 // TODO: xmin, ymin, width, height的范数，不一定在相同数量级内
                 // 相对误差 = (_x - x)/x
-                error = Vector4d(_currBboxesXY - currBboxesXY).cwiseQuotient(currBboxesXY).norm();//分量平方和的平方根
-                simMatrix(M, N) = exp(-1 * error);
+                Vector4d def = _currBboxesXY - currBboxesXY;
+                error = def.cwiseQuotient(currBboxesXY).norm();// cwiseQuotient()逐元素除法，分量平方和的平方根
+                __DEBUG_MATCH__(
+                        cout<<"currBboxesXY:\n"<<currBboxesXY<<endl;
+                        cout<<"def:\n"<<def<<endl;
+                        )
+                simMatrix(simMatrixM, simMatrixN) = exp(-1 * error);
             }
             else
-                simMatrix(M, N) = 0;
+                simMatrix(simMatrixM, simMatrixN) = 0;
         }
     }
+
+    __DEBUG_MATCH__(cout<<"simMatrix:\n"<<simMatrix<<endl;)
     Eigen::MatrixXd simMat_simhorn = graphMatching_h.sinkhorn(simMatrix);
-    Eigen::VectorXi retmatch(graphMatching_h.prior_graph->num_of_nodes()), retmatchinverse(graphMatching_h.visited_graph->num_of_nodes());
-    retmatch.setConstant(-1);
-    retmatchinverse.setConstant(-1);
+
+    Eigen::VectorXi retmatch,retmatchinverse;
+    retmatch.resize(max(M, N)); retmatchinverse.resize(max(M, N)); //resize 第一张图的topo节点
+
 
     // 构建出的相似度矩阵的匹配结果
     Eigen::MatrixXd sim_results;
     sim_results = graphMatching_h.getBestMatchFromSimMat(simMat_simhorn, retmatch, retmatchinverse);
+
+    isCubeMatching = true;
     graphMatching_h.clear();
 
+
+
     __DEBUG_MATCH__(
-            cout<<"上一帧与第"<<curr_->id_<<"帧bboxes的匹配结果矩阵sim_results: \n"<<sim_results<<endl;
+            cout<<"sim_results: \n"<<sim_results<<endl;
             cout<<"retmatch: "<<retmatch<<endl;
-            cout<<TermColor::RESET()<<endl;)
-
-
+            )
+    __DEBUG__(cout<<"ending matching cubes ..."<<TermColor::RESET()<<endl;)
 
 }
 
@@ -415,7 +426,7 @@ void VisualOdometry::saveImage(cv::String dest, cv::Mat image, size_t id, std::s
     char frame_index[256];
     sprintf(frame_index,"%06lu", id);
     savedfilename_ = dest + frame_index + ".jpg";
-    cout<<"save "<<imageName<<"image into "<<dest<<endl;
-    cout<<"file name is: "<<savedfilename_<<endl;
+//    cout<<"save "<<imageName<<"image into "<<dest<<endl;
+//    cout<<"file name is: "<<savedfilename_<<endl;
     cv::imwrite(savedfilename_, image);
 }
