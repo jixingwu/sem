@@ -88,18 +88,22 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
         case INITIALIZING:
         {
             state_ = OK;
-            curr_ = ref_ = frame;
+            curr_ = frame;
             // OUTPUT: frame_cuboids as a 'vector<ObjectSet>' type
             // equal to extractKeyPoints() and computeDescriptors()
             generateCubeProposal();
+            trackCubes();
 //            addKeyFrame();// the first frame is a key-frame
+            ref_ = curr_;
             break;
         }
         case OK:
         {
             curr_ = frame;// 当前帧更新
+
             generateCubeProposal();
             cubeMatching();// equal to featureMatching();
+            trackCubes();
             // matching 后tracking得到的匹配，设置为相同的id
 //             if true, 更新当前帧的pose. if else state_ = LOST;
 //            if(checkReceivedPose())
@@ -270,6 +274,7 @@ void VisualOdometry::generateCubeProposal()
             MapCube *newcuboid = new MapCube();
             newcuboid->pose_ = pose;
             newcuboid->scale_ = scale;
+            newcuboid->id_ = -1; // 未设置id的cube
             newcuboid->object_class = raw_cuboid->object_class;
             newcuboid->bbox_2d_ = cv::Rect(raw_cuboid->rect_detect_2d[0], raw_cuboid->rect_detect_2d[1], raw_cuboid->rect_detect_2d[2], raw_cuboid->rect_detect_2d[3]);
             newcuboid->bbox_vec_ = Vector4d((double)newcuboid->bbox_2d_.x, (double)newcuboid->bbox_2d_.y,
@@ -349,7 +354,7 @@ void VisualOdometry::cubeMatching()
         __DEBUG__(
                 cvNamedWindow("ref image");
                 cvMoveWindow("ref image", 20, 300);
-                cv::Mat img = ref_->rgb_image_;
+                cv::Mat img = ref_->rgb_image_.clone();
                 cv::rectangle(img, ref_->local_cuboids_[simMatrixM]->bbox_2d_,
                               cv::Scalar(255,0,0), 5, cv::LINE_8, 0);
                 saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/0/",img, ref_->id_, "ref image");
@@ -358,7 +363,7 @@ void VisualOdometry::cubeMatching()
                 cvNamedWindow("curr_ image");
                 cvMoveWindow("curr_ image", 20, 300);
                 cv::Rect _currRect(_currBboxesXY(0), _currBboxesXY(1), _currBboxesXY(2), _currBboxesXY(3));
-                img = curr_->rgb_image_;
+                img = curr_->rgb_image_.clone();
                 cv::rectangle(img, _currRect, cv::Scalar(0,255,0), 5, cv::LINE_8, 0);
                 saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", img, curr_->id_, "curr image" );
         )
@@ -397,10 +402,7 @@ void VisualOdometry::cubeMatching()
 
     __DEBUG_MATCH__(cout<<"simMatrix:\n"<<simMatrix<<endl;)
     Eigen::MatrixXd simMat_simhorn = graphMatching_h.sinkhorn(simMatrix);
-
-    Eigen::VectorXi retmatch,retmatchinverse;
     retmatch.resize(max(M, N)); retmatchinverse.resize(max(M, N)); //resize 第一张图的topo节点
-
 
     // 构建出的相似度矩阵的匹配结果
     Eigen::MatrixXd sim_results;
@@ -417,6 +419,7 @@ void VisualOdometry::cubeMatching()
             )
     __DEBUG__(cout<<"ending matching cubes ..."<<TermColor::RESET()<<endl;)
 
+    return;
 }
 
 void VisualOdometry::saveImage(cv::String dest, cv::Mat image, size_t id, std::string imageName)
@@ -429,4 +432,56 @@ void VisualOdometry::saveImage(cv::String dest, cv::Mat image, size_t id, std::s
 //    cout<<"save "<<imageName<<"image into "<<dest<<endl;
 //    cout<<"file name is: "<<savedfilename_<<endl;
     cv::imwrite(savedfilename_, image);
+}
+
+#define __DEBUG_TRACK__(msg) msg;
+
+void VisualOdometry::trackCubes()
+{
+    __DEBUG_TRACK__(cout<<TermColor::iGREEN()<<"starting tracking ..."<<endl;)
+    if (curr_->local_cuboids_.empty())
+    {
+        ROS_WARN("curr frame of local cuboids is empty!!");
+        return;
+    }
+
+    // 对于未被设置id的MapCube的id_ = -1;
+    if(curr_->id_ == 0)
+    {
+        for (int ii = 0; ii < curr_->local_cuboids_.size(); ++ii) {
+            curr_->local_cuboids_[ii]->id_ = ii;
+        }
+    }
+
+    // 完全映射
+    // 不完全映射
+    __DEBUG_TRACK__(cout<<"retmatch: \n"<<retmatch<<endl;)
+
+    vector<int> id_v;
+
+    for (int ii = 0; ii < retmatch.size(); ++ii)
+    {
+        if(retmatch[ii] != -1)
+        {
+            curr_->local_cuboids_[retmatch[ii]]->id_ = ref_->local_cuboids_[ii]->id_;
+            id_v.push_back(curr_->local_cuboids_[retmatch[ii]]->id_);
+        }
+    }
+
+    for(auto & local_cuboid : curr_->local_cuboids_)
+    {
+        auto result = find(id_v.begin(), id_v.end(), local_cuboid->id_);
+        if(result == id_v.end())//没找到
+        {
+            auto p = max_element(id_v.begin(), id_v.end());
+            local_cuboid->id_ = *p + 1;
+            id_v.push_back(local_cuboid->id_);
+        }
+    }
+
+
+
+
+    __DEBUG_TRACK__(cout<<"ending tracking"<<TermColor::RESET()<<endl;)
+    return;
 }

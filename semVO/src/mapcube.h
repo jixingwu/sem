@@ -14,7 +14,7 @@ class MapCube
 {
 public:
     typedef shared_ptr<MapCube> Ptr;
-    unsigned long id_;
+    int id_;
 
     int             observed_times_;// being observed by feature matching algo.
     int             matched_times_;// being an inliner in pose estimation

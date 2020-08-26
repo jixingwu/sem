@@ -96,6 +96,7 @@ public:
 
     GraphMatching<TopoMetric_c, Node_c> graphMatching_h;// 用来进行cube匹配构造相似度矩阵
     bool isCubeMatching = false;
+    Eigen::VectorXi retmatch, retmatchinverse; //相似度矩阵匹配结果及其转置
 
 public:
     VisualOdometry();
@@ -115,13 +116,18 @@ public:
 
     /* cubeMatching()
      * 功能：对ref和curr中提取到的cube进行匹配，输出一对匹配到的cube和对应的index
-     *
-     * 算法描述：ref中的bbox（被提取到cube的）通过pose约束投影到当前帧curr中，
-     * 通过强先验（同类物体）寻找‘最近的bbox1’
-     *
+     * 描述：ref中的bbox（被提取到cube的）通过pose约束投影到当前帧curr中，通过强先验（同类物体）寻找‘最近的bbox1’
+     * 输出：retmatch的size是ref topo点数量，内容是匹配到curr中的index
      * 验证：通过3D cube映射验证，约束有 pose_, scale_
      */
     void cubeMatching();
+    /* trackCubes()
+     * 描述：将ref_ and curr_相同的cube的id相同，并且id是从0顺序递增
+     * 输入：两帧ref_ curr_和bbox的匹配结果retmatch
+     * 输出：修改了curr.local_cuboids_.id，从0递增
+     */
+    void trackCubes();
+
     void addMapCubes();
 
     bool checkKeyFrame();
