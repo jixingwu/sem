@@ -246,8 +246,9 @@ void VisualOdometry::generateCubeProposal()
             char frame_index[256];
             sprintf(frame_index,"%06lu", curr_->id_);
             savedfilename_ = dest_ + frame_index + ".jpg";
-            cout<<"curr_.id_ = "<<curr_->id_<<"\t frame_index = "<<frame_index<<endl;
-            cout<<"savedfilename = "<<savedfilename_<<endl;
+            cout<<"curr_.id_ = "<<curr_->id_<<endl;
+//            cout<<"\t frame_index = "<<frame_index<<endl;
+//            cout<<"savedfilename = "<<savedfilename_<<endl;
             cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
     )
 
@@ -311,7 +312,9 @@ void VisualOdometry::cubeMatching()
 
     int M = ref_->local_cuboids_.size(), N = curr_->local_cuboids_.size();
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> simMatrix;
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> simError;
     simMatrix.resize(M, N);
+    simError.resize(M, N);
 //    simMatrix.Constant(-1);
     if( min(M, N) <= 0 ){
         isCubeMatching = false;
@@ -354,7 +357,7 @@ void VisualOdometry::cubeMatching()
         __DEBUG__(
                 cvNamedWindow("ref image");
                 cvMoveWindow("ref image", 20, 300);
-                cv::Mat img = ref_->rgb_image_.clone();
+                cv::Mat img = ref_->rgb_image_;
                 cv::rectangle(img, ref_->local_cuboids_[simMatrixM]->bbox_2d_,
                               cv::Scalar(255,0,0), 5, cv::LINE_8, 0);
                 saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/0/",img, ref_->id_, "ref image");
@@ -363,7 +366,7 @@ void VisualOdometry::cubeMatching()
                 cvNamedWindow("curr_ image");
                 cvMoveWindow("curr_ image", 20, 300);
                 cv::Rect _currRect(_currBboxesXY(0), _currBboxesXY(1), _currBboxesXY(2), _currBboxesXY(3));
-                img = curr_->rgb_image_.clone();
+                img = curr_->rgb_image_;
                 cv::rectangle(img, _currRect, cv::Scalar(0,255,0), 5, cv::LINE_8, 0);
                 saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", img, curr_->id_, "curr image" );
         )
@@ -393,16 +396,29 @@ void VisualOdometry::cubeMatching()
                         cout<<"currBboxesXY:\n"<<currBboxesXY<<endl;
                         cout<<"def:\n"<<def<<endl;
                         )
-                simMatrix(simMatrixM, simMatrixN) = exp(-1 * error);
+//                simError(simMatrixM, simMatrixN) = error;
+                if(error >= 1.0){ // 用1来限制过大的error
+                    simMatrix(simMatrixM, simMatrixN) = 0;
+                }else{
+                    simMatrix(simMatrixM, simMatrixN) = exp(-1 * error);
+                }
+
             }
-            else
+            else{
+//                simError(simMatrixM, simMatrixN) = 100000;
                 simMatrix(simMatrixM, simMatrixN) = 0;
+            }
+
         }
     }
 
-    __DEBUG_MATCH__(cout<<"simMatrix:\n"<<simMatrix<<endl;)
+    __DEBUG_MATCH__(
+            cout<<"simMatrix:\n"<<simMatrix<<endl;
+//            cout<<"simError: \n"<<simError<<endl;
+            )
     Eigen::MatrixXd simMat_simhorn = graphMatching_h.sinkhorn(simMatrix);
-    retmatch.resize(max(M, N)); retmatchinverse.resize(max(M, N)); //resize 第一张图的topo节点
+    retmatch.resize(M);        // resize 第1张图的topo节点数
+    retmatchinverse.resize(N); // resize 第2张图的topo节点数
 
     // 构建出的相似度矩阵的匹配结果
     Eigen::MatrixXd sim_results;
@@ -414,6 +430,7 @@ void VisualOdometry::cubeMatching()
 
 
     __DEBUG_MATCH__(
+            cout<<"simMat_simhorn: \n"<<simMat_simhorn<<endl;
             cout<<"sim_results: \n"<<sim_results<<endl;
             cout<<"retmatch: "<<retmatch<<endl;
             )
@@ -434,16 +451,17 @@ void VisualOdometry::saveImage(cv::String dest, cv::Mat image, size_t id, std::s
     cv::imwrite(savedfilename_, image);
 }
 
-#define __DEBUG_TRACK__(msg) msg;
+#define __DEBUG_TRACK__(msg);
 
 void VisualOdometry::trackCubes()
 {
-    __DEBUG_TRACK__(cout<<TermColor::iGREEN()<<"starting tracking ..."<<endl;)
+    __DEBUG__(cout<<TermColor::iGREEN()<<"starting tracking ..."<<TermColor::RESET()<<endl;)
     if (curr_->local_cuboids_.empty())
     {
         ROS_WARN("curr frame of local cuboids is empty!!");
         return;
     }
+    __DEBUG_TRACK__(cout<<"curr_ id: "<<curr_->id_<<endl;)
 
     // 对于未被设置id的MapCube的id_ = -1;
     if(curr_->id_ == 0)
@@ -451,13 +469,26 @@ void VisualOdometry::trackCubes()
         for (int ii = 0; ii < curr_->local_cuboids_.size(); ++ii) {
             curr_->local_cuboids_[ii]->id_ = ii;
         }
+        __DEBUG_TRACK__(
+                cout<<"first frame curr_ id:";
+                for(auto cuboid:curr_->local_cuboids_)
+                    cout<<cuboid->id_<<endl;
+                )
+        return;
     }
 
     // 完全映射
     // 不完全映射
-    __DEBUG_TRACK__(cout<<"retmatch: \n"<<retmatch<<endl;)
+    __DEBUG_TRACK__(
+            cout<<TermColor::iGREEN()<<"retmatch: \n"<<retmatch<<endl;
+            cout<<"ref_ id: ";
+            for (auto cuboid : ref_->local_cuboids_) {
+                cout<<cuboid->id_<<endl;
+            }
+            )
 
     vector<int> id_v;
+    vector<int> id_vall;
 
     for (int ii = 0; ii < retmatch.size(); ++ii)
     {
@@ -466,22 +497,27 @@ void VisualOdometry::trackCubes()
             curr_->local_cuboids_[retmatch[ii]]->id_ = ref_->local_cuboids_[ii]->id_;
             id_v.push_back(curr_->local_cuboids_[retmatch[ii]]->id_);
         }
+        id_vall.push_back(ref_->local_cuboids_[ii]->id_);
     }
 
     for(auto & local_cuboid : curr_->local_cuboids_)
     {
-        auto result = find(id_v.begin(), id_v.end(), local_cuboid->id_);
-        if(result == id_v.end())//没找到
+        auto result = find(id_vall.begin(), id_vall.end(), local_cuboid->id_);
+        if(result == id_vall.end())//没找到
         {
-            auto p = max_element(id_v.begin(), id_v.end());
+            auto p = max_element(id_vall.begin(), id_vall.end());
             local_cuboid->id_ = *p + 1;
-            id_v.push_back(local_cuboid->id_);
+            id_vall.push_back(local_cuboid->id_);
         }
     }
+    __DEBUG_TRACK__(
+            cout<<"curr_ id: ";
+            for (auto cuboid:curr_->local_cuboids_) {
+                cout<<cuboid->id_<<endl;
+            }
+            cout<<TermColor::RESET()<<endl;
+            )
 
-
-
-
-    __DEBUG_TRACK__(cout<<"ending tracking"<<TermColor::RESET()<<endl;)
+    __DEBUG__(cout<<TermColor::iGREEN()<<"ending tracking"<<TermColor::RESET()<<endl;)
     return;
 }

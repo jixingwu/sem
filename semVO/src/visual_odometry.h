@@ -125,6 +125,8 @@ public:
      * 描述：将ref_ and curr_相同的cube的id相同，并且id是从0顺序递增
      * 输入：两帧ref_ curr_和bbox的匹配结果retmatch
      * 输出：修改了curr.local_cuboids_.id，从0递增
+     * 代码逻辑：如果是第一帧，那么设置cube的id从0开始递增；找retmatch中ref与curr匹配到的id，将curr对应设置为ref的id
+     * 对于没有匹配到的作为新的cube新增其id值。
      */
     void trackCubes();
 
