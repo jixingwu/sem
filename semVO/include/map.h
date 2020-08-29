@@ -16,8 +16,8 @@ public:
 
     SemMap(){}
 
-    void insertKeyFrame(Frame::Ptr frame);
-    void insertMapCube(MapCube::Ptr map_cube);
+    void insertKeyFrame(const Frame::Ptr& frame);
+    void insertMapCube(const MapCube::Ptr& map_cube);
 };
 
 #endif //SRC_MAP_H

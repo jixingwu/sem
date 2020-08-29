@@ -104,7 +104,6 @@ public:
 
     bool addFrame( Frame::Ptr frame );   //add a new frame
 
-public:
     // inner operation
     void inputImage(const cv::Mat image);
     void inputBboxes(const darknet_ros_msgs::BoundingBoxes);
@@ -129,6 +128,8 @@ public:
      * 对于没有匹配到的作为新的cube新增其id值。
      */
     void trackCubes();
+
+    void optimizeMap();
 
     void addMapCubes();
 

@@ -32,6 +32,7 @@
 #include "visual_odometry.h"
 #include "config.h"
 #include "include/TermColor.h"
+#include "visualization.h"
 
 #define DEBUG
 
@@ -184,6 +185,8 @@ int main(int argc, char** argv)
         Config::setParameterFile(argv[1]);
     else
         return 1;
+
+    registerPub(nh);
 
     //// synchronize image and bboxes time
     string left_image_topic = string("/leftImageRGB");

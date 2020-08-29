@@ -67,7 +67,7 @@ VisualOdometry::VisualOdometry():
     __DEBUG__(cout<< "InitToGround: "<< InitToGround<< endl;)
 }
 VisualOdometry::~VisualOdometry() {}
-
+#define __DEBUG_ADDKEYFRAME__(msg) msg;
 void VisualOdometry::addKeyFrame()
 {
     if(map_->keyframes_.empty())
@@ -79,6 +79,9 @@ void VisualOdometry::addKeyFrame()
             map_->insertMapCube(map_cube);
         }
     }
+
+    map_->insertKeyFrame(curr_);
+    __DEBUG_ADDKEYFRAME__(cout<<TermColor::iRED()<<"map member num: "<<map_->map_cubes_.size()<<TermColor::RESET();)
 
 }
 
@@ -93,7 +96,7 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
             // equal to extractKeyPoints() and computeDescriptors()
             generateCubeProposal();
             trackCubes();
-//            addKeyFrame();// the first frame is a key-frame
+            addKeyFrame();// the first frame is a key-frame
             ref_ = curr_;
             break;
         }
@@ -103,8 +106,8 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
 
             generateCubeProposal();
             cubeMatching();// equal to featureMatching();
-            trackCubes();
-            // matching 后tracking得到的匹配，设置为相同的id
+            trackCubes();// matching 后tracking得到的匹配，设置为相同的id
+
 //             if true, 更新当前帧的pose. if else state_ = LOST;
 //            if(checkReceivedPose())
 //            {
@@ -119,6 +122,9 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
 //                }
 //                return false;
 //            }
+
+//            optimizeMap();
+            addKeyFrame();
             ref_ = curr_;
             break;
         }

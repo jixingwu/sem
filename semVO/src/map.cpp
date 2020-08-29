@@ -4,7 +4,7 @@
 
 #include "map.h"
 
-void SemMap::insertKeyFrame(Frame::Ptr frame)
+void SemMap::insertKeyFrame(const Frame::Ptr& frame)
 {
     cout<< "Key frame size = "<< keyframes_.size() << endl;
     if ( keyframes_.find(frame->id_) == keyframes_.end() )
@@ -17,7 +17,7 @@ void SemMap::insertKeyFrame(Frame::Ptr frame)
     }
 }
 
-void SemMap::insertMapCube(MapCube::Ptr map_cube)
+void SemMap::insertMapCube(const MapCube::Ptr& map_cube)
 {
     if(map_cubes_.find(map_cube->id_) == map_cubes_.end() )
         map_cubes_.insert( make_pair(map_cube->id_, map_cube));

@@ -25,10 +25,10 @@
 #include <Eigen/Core>
 
 // ours
-#include "matrix_utils.h"
-#include "object_3d_util.h"
-#include "profiler.hpp"
-#include "detect_3d_cuboid.h"
+#include "detect_3d_cuboid/matrix_utils.h"
+#include "detect_3d_cuboid/object_3d_util.h"
+#include "detect_3d_cuboid/profiler.hpp"
+#include "detect_3d_cuboid/detect_3d_cuboid.h"
 
 using namespace std;
 // using namespace cv;

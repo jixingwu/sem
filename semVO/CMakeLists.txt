@@ -79,7 +79,7 @@ add_library(cube_vo_lib
         src/map.cpp
         src/mapcube.cpp
         src/visual_odometry.cpp
-    )
+        src/visualization.cpp)
 
 target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} ${G2O_LIBRARIES} ${Sophus_LIBRARIES})
 
@@ -94,5 +94,5 @@ target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIB
 #target_link_libraries(kitti_gps_test vins_lib)
 
 add_executable(cube_vo_test src/cube_vo_node.cpp)
-target_link_libraries(cube_vo_test cube_vo_lib ${PROJECT_SOURCE_DIR}/src/Thirdparty/g2o/lib/libg2o.so)
+target_link_libraries(cube_vo_test cube_vo_lib ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so)
 
