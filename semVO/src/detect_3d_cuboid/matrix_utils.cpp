@@ -1,4 +1,4 @@
-#include "detect_3d_cuboid/matrix_utils.h"
+#include "matrix_utils.h"
 
 // std c
 #include <math.h>

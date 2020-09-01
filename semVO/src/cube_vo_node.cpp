@@ -28,11 +28,11 @@
 #include <cv_bridge/cv_bridge.h>
 #include <nav_msgs/Odometry.h>
 
-#include "frame.h"
-#include "visual_odometry.h"
-#include "config.h"
-#include "include/TermColor.h"
-#include "visualization.h"
+#include "visual_odometry/frame.h"
+#include "visual_odometry/visual_odometry.h"
+#include "visualization/config.h"
+#include "visual_odometry/TermColor.h"
+#include "visualization/visualization.h"
 
 #define DEBUG
 

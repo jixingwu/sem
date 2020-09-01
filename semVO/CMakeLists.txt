@@ -61,6 +61,7 @@ catkin_package(
 )
 
 add_library(cube_vo_lib
+        #Cube-SLAM
         src/detect_3d_cuboid/box_proposal_detail.cpp
         src/detect_3d_cuboid/matrix_utils.cpp
         src/detect_3d_cuboid/object_3d_util.cpp
@@ -70,16 +71,20 @@ add_library(cube_vo_lib
         src/line_lbd/line_lbd_allclass.cpp
         src/line_lbd/lsd.cpp
         src/line_lbd/LSDDetector.cpp
-        src/TopoMetric.cpp
+
 
         #vo
-        src/camera.cpp
-        src/config.cpp
-        src/frame.cpp
-        src/map.cpp
-        src/mapcube.cpp
-        src/visual_odometry.cpp
-        src/visualization.cpp)
+        src/camera_models/camera.cpp
+
+        src/visual_odometry/frame.cpp
+        src/visual_odometry/map.cpp
+        src/visual_odometry/mapcube.cpp
+        src/visual_odometry/visual_odometry.cpp
+
+        src/visualization/visualization.cpp
+        src/visualization/config.cpp
+        src/estimator/estimator.cpp
+        )
 
 target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} ${G2O_LIBRARIES} ${Sophus_LIBRARIES})
 
