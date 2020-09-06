@@ -34,6 +34,8 @@
 #include "visual_odometry/TermColor.h"
 #include "visualization/visualization.h"
 
+#include "estimator/estimator.h"
+
 #define DEBUG
 
 using namespace std;
@@ -93,6 +95,8 @@ void sync_process()
 {
     VisualOdometry::Ptr vo(new VisualOdometry);
     Camera::Ptr camera(new Camera);
+    Estimator estimator;
+
 
     while(ros::ok())
     {
@@ -142,6 +146,11 @@ void sync_process()
                     pFrame->T_c_w_ = Sophus::SE3(q,t);
                     __DEBUG__( ROS_INFO("curr frame id is %ld", pFrame->id_);)
                     vo->addFrame(pFrame);
+
+                    if (vo->state_ == VisualOdometry::OK)
+                    {
+                        estimator.optimization();
+                    }
 
                 }
                 else

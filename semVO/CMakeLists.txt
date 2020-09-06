@@ -84,7 +84,7 @@ add_library(cube_vo_lib
         src/visualization/visualization.cpp
         src/visualization/config.cpp
         src/estimator/estimator.cpp
-        )
+        src/estimator/projectionCameraObjectFactor.h)
 
 target_link_libraries(cube_vo_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} ${G2O_LIBRARIES} ${Sophus_LIBRARIES})
 
