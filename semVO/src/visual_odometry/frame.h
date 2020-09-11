@@ -47,6 +47,8 @@ public:
 
     // check if a point is in this frame
     bool isInFrame( const Vector3d& pt_world);
+
+    // get dataset
 };
 
 #endif //SRC_FRAME_H

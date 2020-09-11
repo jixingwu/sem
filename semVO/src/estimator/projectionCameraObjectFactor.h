@@ -23,11 +23,15 @@ using namespace std;
 struct ProjectionCameraObjectFactor // : public ceres::SizedCostFunction<9, 6, 3> // e_co_3D: 9维
 {
 public:
-    ProjectionCameraObjectFactor(MapCube& landmark, Sophus::SE3& pose)
+    ProjectionCameraObjectFactor(MapCube landmark, Sophus::SE3 pose)
     {
+        T_w_c_landmark_ = Matrix4d::Identity();
         T_w_c_landmark_.topLeftCorner(3,3) = landmark.pose_.rotation_matrix();
         T_w_c_landmark_.col(3).topRows(3) = landmark.pose_.translation();
+
         dimen_landmark_ = landmark.scale_;
+
+        T_w_c_pose_ = Matrix4d::Identity();
         T_w_c_pose_.topLeftCorner(3,3) = pose.rotation_matrix();
         T_w_c_pose_.col(3).topRows(3) = pose.translation();
     }
@@ -59,7 +63,7 @@ Quaternion<T> delta_q( R );
         Eigen::Map<const Eigen::Matrix<T, 3, 1>>    dimen(kdimen);
         Eigen::Matrix<T, 4, 4>                      T_w_c;
 
-        T_w_c.setOnes();
+        T_w_c = Matrix<T, 4, 4>::Identity();
         T_w_c.topLeftCorner(3, 3) = quat.toRotationMatrix();
         T_w_c.col(3).topRows(3) = trans;
 
@@ -74,19 +78,23 @@ Quaternion<T> delta_q( R );
 
         Eigen::Map<Matrix<T, 10, 1>> res(residuals);// res = [q(xyzw), t, d]
 
-        res.block(0,0, 3,0) <<(delta_q.x(), delta_q.y(), delta_q.z(), delta_q.w());
-        res.block(4,0, 6,0) = delta.col(3).topRows(3);
-        res.block(7,0, 9,0) = (dimen_landmark - dimen).cwiseAbs();
+        res.topRows(4)  = Matrix<T, 4, 1>(delta_q.x(), delta_q.y(), delta_q.z(), delta_q.w());
+        res.middleRows(4, 3) = delta.col(3).topRows(3);
+        res.bottomRows(3) = (dimen_landmark - dimen).cwiseAbs();
 
-       cout<<"residuals:\n"<<residuals<<endl;
-       return true;
+//        cout<<"dimen_land:\n"<<dimen_landmark<<endl;
+//        cout<<"dimen\n"<<dimen<<endl;
+//        cout<<"res:\n"<<res<<endl;
+//        T a = residuals[3];
+//        cout<<"residuals:\n"<<res<<endl;
+        return true;
     }
 
 private:
 
-    Matrix4d T_w_c_landmark_ = Matrix4d::Identity();
+    Matrix4d T_w_c_landmark_;
     Vector3d dimen_landmark_;
-    Matrix4d T_w_c_pose_ = Matrix4d::Identity();
+    Matrix4d T_w_c_pose_;
 };
 
 #endif //SRC_PROJECTIONCAMERAOBJECTFACTOR_H

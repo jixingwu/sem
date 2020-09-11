@@ -2,10 +2,11 @@
 // Created by jixingwu on 2020/7/21.
 //
 
+#include <ros/console.h>
 #include "visual_odometry.h"
 #include "src/visualization/config.h"
-//#include "Converter.h"
 #include "TermColor.h"
+#include "src/detect_3d_cuboid/object_3d_util.h"
 
 typedef Eigen::Matrix<double, 7, 1> Vector7d;
 typedef Eigen::Matrix<double, 5, 1> Vector5d;
@@ -41,20 +42,6 @@ VisualOdometry::VisualOdometry():
     line_lbd_obj.use_LSD = true;
     line_lbd_obj.line_length_thres = 15;
 
-    // graph optimization
-//    g2o::BlockSolverX::LinearSolverType* linearSolver;
-//    linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
-//    g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
-//    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-//    graph.setAlgorithm(solver);    graph.setVerbose(false);
-//
-//    Eigen::Quaterniond init_cam_pose_q(init_q.w(), init_q.x(), init_q.y(), init_q.z());
-//    Eigen::Vector3d init_cam_pose_v(init_t.x(), init_t.y(), init_t.z());
-//
-//    Vector7d cam_pose; cam_pose<< init_t.x(), init_t.y(), init_t.z(), init_q.x(), init_q.y(), init_q.z(), init_q.w();//0 0 1.7000000 -0.7071 0 0 0.7071
-//    fixed_init_cam_pose_Twc = g2o::SE3Quat(cam_pose);
-//    __DEBUG__(cout<< TermColor::iRED()<< "fixed_init_cam_pose_Twc: "  << fixed_init_cam_pose_Twc <<TermColor::RESET() << endl;)
-
     init_q.x() = -0.7071;
     init_q.y() = init_q.z() = 0;
     init_q.w() = 0.7071;
@@ -66,18 +53,13 @@ VisualOdometry::VisualOdometry():
 }
 VisualOdometry::~VisualOdometry() {}
 
-#define __DEBUG_ADDKEYFRAME__(msg) msg;
+#define __DEBUG_ADDKEYFRAME__(msg) ;
 void VisualOdometry::addKeyFrame()
 {
     __DEBUG_ADDKEYFRAME__(cout<<TermColor::iCYAN()<<"start add keyframe!"<<endl;)
-    if(map_->keyframes_.empty())
-    {
-        // first key-frame, add all cube object into map
-        for (auto map_cube : curr_->local_cuboids_)
-        {
-            map_->insertMapCube(*map_cube);
-        }
-    }
+
+    for(auto map_cube : curr_->local_cuboids_)
+        map_->insertMapCube(*map_cube);
 
     map_->insertKeyFrame(curr_);
     __DEBUG_ADDKEYFRAME__(cout<<"map key-frame num: "<<map_->keyframes_.size()<<TermColor::RESET()<<endl;)
@@ -91,6 +73,7 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
         {
             state_ = OK;
             curr_ = frame;
+            frameBuf.push(curr_);
             generateCubeProposal();
             trackCubes();
             addKeyFrame();// the first frame is a key-frame
@@ -100,11 +83,12 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
         case OK:
         {
             curr_ = frame;// 当前帧更新
-
+            frameBuf.push(curr_);
             generateCubeProposal();
             cubeMatching();// equal to featureMatching();
             trackCubes();// matching 后tracking得到的匹配，设置为相同的id
-//            optimizeMap();
+//            estimator.optimization(ref_, curr_); // local BA
+            optimizeCube();
             addKeyFrame();
             ref_ = curr_;
             break;
@@ -130,11 +114,12 @@ bool VisualOdometry::isBboxesInImage(Vector4d v, cv::Mat image)
         return false;
 
 }
-#define __DEBUG__(msg) msg;
+#define __DEBUG__(msg);
 #define __DEBUG_GENERATE__(msg);
 void VisualOdometry::generateCubeProposal()
 {
-    __DEBUG__(cout<< TermColor::iBLUE() <<"starting detecting cubes ..."<<endl;)
+    ROS_DEBUG_NAMED("generateCubeProposal()", "%lu: staring detecing cubes", curr_->id_);
+
     const cv::Mat &raw_rgb_image = curr_->rgb_image_;
     const darknet_ros_msgs::BoundingBoxes frame_bboxes = *curr_->bboxes_;
 
@@ -221,23 +206,24 @@ void VisualOdometry::generateCubeProposal()
     vector<ObjectSet> all_obj_cubes;
     detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, v_class, all_lines_raw, all_obj_cubes);
 
-    __DEBUG__(
-//            cout<<"[tracking/DetectCuboid()] detected all_obj_cubes size: " << all_obj_cubes.size()<<endl;
-            cvNamedWindow("detect_cuboid_obj->cuboids_2d_img");
-            cvMoveWindow("detect_cuboid_obj->cuboids_2d_img", 20, 300);
-            cv::imshow("detect_cuboid_obj->cuboids_2d_img",detect_cuboid_obj->cuboids_2d_img);
-            cv::waitKey(2);
+    bool isSavedImage = true;
+    if(isSavedImage)
+    {
+        cvNamedWindow("detect_cuboid_obj->cuboids_2d_img");
+        cvMoveWindow("detect_cuboid_obj->cuboids_2d_img", 20, 300);
+        cv::imshow("detect_cuboid_obj->cuboids_2d_img", detect_cuboid_obj->cuboids_2d_img);
+        cv::waitKey(2);
 
-            cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
-            cv::String savedfilename_;
-            char frame_index[256];
-            sprintf(frame_index,"%06lu", curr_->id_);
-            savedfilename_ = dest_ + frame_index + ".jpg";
-            cout<<"curr_.id_ = "<<curr_->id_<<endl;
-//            cout<<"\t frame_index = "<<frame_index<<endl;
-//            cout<<"savedfilename = "<<savedfilename_<<endl;
-            cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
-    )
+        cv::String dest_ = "/home/jixingwu/catkin_ws/src/sem/semVO/image_results/";
+        cv::String savedfilename_;
+        char frame_index[256];
+        sprintf(frame_index, "%06lu", curr_->id_);
+        savedfilename_ = dest_ + frame_index + ".jpg";
+//    cout<<"curr_.id_ = "<<curr_->id_<<endl;
+
+        cv::imwrite(savedfilename_, detect_cuboid_obj->cuboids_2d_img);
+    }
+
 
     // cp and analyze results.对于每个检测到的raw cube，将其转换为可添加到SemMap中的类型——MapCube
     curr_->local_cuboids_.clear();
@@ -286,14 +272,16 @@ void VisualOdometry::generateCubeProposal()
         }
     }
 
-    __DEBUG__(cout<<"detected cube num: "<<curr_->local_cuboids_.size()<<endl;)
+    ROS_DEBUG_NAMED("generateCubeProposal()", "detected cube num: %zu", curr_->local_cuboids_.size());
+
     __DEBUG_GENERATE__(cout<<"curr_.local_cuboids_.size(): "<<curr_->local_cuboids_.size()<<endl;)
-    __DEBUG__(cout<<"ending detection ..."<<TermColor::RESET()<<endl;)
+    ROS_DEBUG_NAMED("generateCubeProposal()", "ending detection!");
 
 }
 #define __DEBUG_MATCH__(msg) ;
 void VisualOdometry::cubeMatching()
 {
+    ROS_DEBUG_NAMED("cubeMatching()", "%lu: staring matching cubes", curr_->id_);
     __DEBUG__(cout<<TermColor::iRED()<<"staring matching cubes ..."<<endl;)
     __DEBUG__(cout<<"curr_ frame id: "<< curr_->id_<<endl;)
 
@@ -341,22 +329,24 @@ void VisualOdometry::cubeMatching()
         __DEBUG_MATCH__(
                 cout<<" _currBboxesXY(xmin, ymin, width, height) in curr frame: "<<_currBboxesXY<<endl;
                 )
-        __DEBUG__(
-                cvNamedWindow("ref image");
-                cvMoveWindow("ref image", 20, 300);
-                cv::Mat img = ref_->rgb_image_;
-                cv::rectangle(img, ref_->local_cuboids_[simMatrixM]->bbox_2d_,
-                              cv::Scalar(255,0,0), 5, cv::LINE_8, 0);
-                saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/0/",img, ref_->id_, "ref image");
-                )
-        __DEBUG__(
-                cvNamedWindow("curr_ image");
-                cvMoveWindow("curr_ image", 20, 300);
-                cv::Rect _currRect(_currBboxesXY(0), _currBboxesXY(1), _currBboxesXY(2), _currBboxesXY(3));
-                img = curr_->rgb_image_;
-                cv::rectangle(img, _currRect, cv::Scalar(0,255,0), 5, cv::LINE_8, 0);
-                saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", img, curr_->id_, "curr image" );
-        )
+        bool issavedImage = true;
+        if(issavedImage)
+        {
+            cvNamedWindow("ref image");
+            cvMoveWindow("ref image", 20, 300);
+            cv::Mat img = ref_->rgb_image_;
+            cv::rectangle(img, ref_->local_cuboids_[simMatrixM]->bbox_2d_,
+                          cv::Scalar(255, 0, 0), 5, cv::LINE_8, 0);
+            saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/0/", img, ref_->id_, "ref image");
+
+            cvNamedWindow("curr_ image");
+            cvMoveWindow("curr_ image", 20, 300);
+            cv::Rect _currRect(_currBboxesXY(0), _currBboxesXY(1), _currBboxesXY(2), _currBboxesXY(3));
+            img = curr_->rgb_image_;
+            cv::rectangle(img, _currRect, cv::Scalar(0, 255, 0), 5, cv::LINE_8, 0);
+            saveImage("/home/jixingwu/catkin_ws/src/sem/semVO/image/1/", img, curr_->id_, "curr image");
+        }
+
         // TODO: _currBboxesXY match with currBboxesXY
         //// @param _currBboxesXY    ref帧中的bboxes映射到curr帧中的参数
         //// @param currBboxesXY    curr帧中的每个bboxes
@@ -422,6 +412,7 @@ void VisualOdometry::cubeMatching()
             cout<<"retmatch: "<<retmatch<<endl;
             )
     __DEBUG__(cout<<"ending matching cubes ..."<<TermColor::RESET()<<endl;)
+    ROS_DEBUG_NAMED("cubeMatching()", "ending matching cubes!");
 
     return;
 }
@@ -443,6 +434,8 @@ void VisualOdometry::saveImage(cv::String dest, cv::Mat image, size_t id, std::s
 void VisualOdometry::trackCubes()
 {
     __DEBUG__(cout<<TermColor::iGREEN()<<"starting tracking ..."<<TermColor::RESET()<<endl;)
+    ROS_DEBUG_NAMED("trackCubes()", "%lu: starting tracker", curr_->id_);
+
     if (curr_->local_cuboids_.empty())
     {
         ROS_WARN("curr frame of local cuboids is empty!!");
@@ -469,9 +462,9 @@ void VisualOdometry::trackCubes()
     __DEBUG_TRACK__(
             cout<<TermColor::iGREEN()<<"retmatch: \n"<<retmatch<<endl;
             cout<<"ref_ id: ";
-            for (auto cuboid : ref_->local_cuboids_) {
+            for (auto cuboid : ref_->local_cuboids_)
                 cout<<cuboid->id_<<endl;
-            }
+
             )
 
     vector<int> id_v;
@@ -507,4 +500,13 @@ void VisualOdometry::trackCubes()
 
     __DEBUG__(cout<<TermColor::iGREEN()<<"ending tracking"<<TermColor::RESET()<<endl;)
     return;
+}
+
+void VisualOdometry::optimizeCube()
+{
+    ROS_DEBUG_NAMED("optimizeCube()", "%lu: starting opt", curr_->id_);
+    estimator.optimization(map_, curr_);
+    cv::Mat plot_image = curr_->rgb_image_.clone();
+    plot_image_with_cuboid(plot_image, curr_->local_cuboids_);
+
 }

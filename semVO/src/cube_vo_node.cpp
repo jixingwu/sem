@@ -36,14 +36,13 @@
 
 #include "estimator/estimator.h"
 
-#define DEBUG
 
 using namespace std;
 using namespace Eigen;
 
-queue<darknet_ros_msgs::BoundingBoxesConstPtr> frame_bboxes_buf;
-queue<sensor_msgs::ImageConstPtr> img0_buf;
-queue<nav_msgs::OdometryConstPtr> pose_buf;
+queue<darknet_ros_msgs::BoundingBoxesConstPtr>  frame_bboxes_buf;
+queue<sensor_msgs::ImageConstPtr>               img0_buf;
+queue<nav_msgs::OdometryConstPtr>               pose_buf;
 std::mutex m_buf;
 
 #define __DEBUG__(msg) msg;
@@ -112,15 +111,15 @@ void sync_process()
             ROS_DEBUG_ONCE("------ received console msgs-------");
             if (img0_buf.front()->header.stamp < pose_buf.front()->header.stamp)
             {
-                ROS_WARN("this image is not inited!! ");
+                ROS_WARN_ONCE("this image is not inited!! ");
                 img0_buf.pop();
             }
             else if(img0_buf.front()->header.stamp == pose_buf.front()->header.stamp)
             {
-                ROS_INFO("image stamp is equal to pose!!!");
+                ROS_DEBUG_ONCE("image stamp is equal to pose!!!");
                 if(img0_buf.front()->header.stamp == frame_bboxes_buf.front()->image_header.stamp)
                 {
-                    ROS_INFO("image stamp is equal to bboxes!!!");
+                    ROS_DEBUG_ONCE("image stamp is equal to bboxes!!!");
                     image_time = img0_buf.front()->header.stamp.toSec();
                     image_header = img0_buf.front()->header;
                     image = getImageFromMsg(img0_buf.front());
@@ -144,18 +143,14 @@ void sync_process()
                     pFrame->rgb_image_ = image;
                     pFrame->bboxes_ = frame_bboxes;
                     pFrame->T_c_w_ = Sophus::SE3(q,t);
-                    __DEBUG__( ROS_INFO("curr frame id is %ld", pFrame->id_);)
+                    ROS_INFO("curr frame id is %ld", pFrame->id_);
                     vo->addFrame(pFrame);
 
-                    if (vo->state_ == VisualOdometry::OK)
-                    {
-                        estimator.optimization();
-                    }
 
                 }
                 else
                 {
-                    ROS_WARN("bboxes aliasing!! pop bboxes");
+                    ROS_DEBUG_ONCE("bboxes aliasing!! pop bboxes");
                     frame_bboxes_buf.pop();
 //                    continue;
                 }
@@ -171,8 +166,8 @@ void sync_process()
 //            img0_buf.pop(); frame_bboxes_buf.pop(); pose_buf.pop();
         }
         else{
-            __DEBUG__(ROS_DEBUG_ONCE("------- not all received -----");
-                    cout<<img0_buf.size()<<"\t"<<frame_bboxes_buf.size()<<"\t"<<pose_buf.size()<<endl;)
+            ROS_DEBUG_ONCE("------- not all received -----");
+//                    cout<<img0_buf.size()<<"\t"<<frame_bboxes_buf.size()<<"\t"<<pose_buf.size()<<endl;
         }
         m_buf.unlock();
         std::chrono::milliseconds dura(2);
@@ -199,16 +194,16 @@ int main(int argc, char** argv)
 
     //// synchronize image and bboxes time
     string left_image_topic = string("/leftImageRGB");
-    ROS_INFO("[VO] Subscribe to left_image_topic: %s", left_image_topic.c_str());
+    ROS_DEBUG("[VO] Subscribe to left_image_topic: %s", left_image_topic.c_str());
     ros::Subscriber sub_left_image = nh.subscribe(left_image_topic, 100, img0_callback);
 
     string frame_bboxes_topic = string("/darknet_ros/bounding_boxes");
-    ROS_INFO("[VO] Subscribe to frame_bboxes_topic: %s", frame_bboxes_topic.c_str());
+    ROS_DEBUG("[VO] Subscribe to frame_bboxes_topic: %s", frame_bboxes_topic.c_str());
 //    message_filters::Subscriber<darknet_ros_msgs::BoundingBoxes> frame_bboxes_sub(nh, frame_bboxes_topic, 100);
     ros::Subscriber sub_frame_bboxes = nh.subscribe(frame_bboxes_topic, 100, frame_bboxes_callback);
 
     string camera_pose_topic = string("/vins_estimator/camera_pose");
-    ROS_INFO("[VO] Subscribe to camera_pose_topic: %s", camera_pose_topic.c_str());
+    ROS_DEBUG("[VO] Subscribe to camera_pose_topic: %s", camera_pose_topic.c_str());
 //    message_filters::Subscriber<nav_msgs::Odometry> camera_pose_sub(nh, camera_pose_topic, 100);
     ros::Subscriber sub_pose = nh.subscribe(camera_pose_topic, 100, pose_callback);
 
@@ -217,9 +212,8 @@ int main(int argc, char** argv)
 //    ros::Subscriber sub_detec = nh.subscribe(detection_image_topic, 100, detec_callback);
 
     std::thread sync_thread{sync_process};
-#ifdef DEBUG
-    printf("[VO] Subscriber Finished!\n");
-#endif
+
+    ROS_DEBUG("[VO] Subscriber Finished!\n");
     ros::spin();
 
     return 0;

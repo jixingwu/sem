@@ -46,6 +46,7 @@
 #include "map.h"
 #include "frame.h"
 #include "mapcube.h"
+#include "src/estimator/estimator.h"
 
 typedef Eigen::Matrix<double, 9, 1> Vector9d;
 typedef Eigen::Matrix<double, 9, 9> Matrix9d;
@@ -67,10 +68,9 @@ public:
     VOState             state_; // current VO status
     SemMap::Ptr         map_;   // map with all frames and map points
 
-
-
     Frame::Ptr          ref_;// = new Frame();   // reference key-frame
     Frame::Ptr          curr_;  // current frame
+    queue<Frame::Ptr>   frameBuf;
 
     vector<ObjectSet>                       cubes_curr_;    //cubes in current frame, 3D
     vector<darknet_ros_msgs::BoundingBoxes> bboxes_curr_;   // bboxes in current frame, 2D
@@ -136,7 +136,8 @@ public:
      */
     void trackCubes();
 
-    void optimizeMap();
+    Estimator estimator;
+    void optimizeCube();
 
     void addMapCubes();
 
