@@ -26,10 +26,10 @@ void pubTrackImage(const cv::Mat &imgTrack, double t);
 
 void pubOdometry(const VisualOdometry &vo, const std_msgs::Header &header);
 
-void pubCuboid(const VisualOdometry &vo, const std_msgs::Header &header);
+void pubCuboids(MapCube *mapCube, Vector3d rgbcolor, double t);
 
-void cuboid_corner_to_marker(const Matrix38d &cube_corners, visualization_msgs::Marker &marker, int bodyOrFront);
-visualization_msgs::MarkerArray cuboids_to_marker(const MapCube &mapcube, Vector3d rgbcolor);
+void outputCuboids(MapCube *mapCube);
+
 
 
 

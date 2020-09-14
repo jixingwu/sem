@@ -199,13 +199,16 @@ int main(int argc, char** argv)
 
     string frame_bboxes_topic = string("/darknet_ros/bounding_boxes");
     ROS_DEBUG("[VO] Subscribe to frame_bboxes_topic: %s", frame_bboxes_topic.c_str());
-//    message_filters::Subscriber<darknet_ros_msgs::BoundingBoxes> frame_bboxes_sub(nh, frame_bboxes_topic, 100);
     ros::Subscriber sub_frame_bboxes = nh.subscribe(frame_bboxes_topic, 100, frame_bboxes_callback);
 
     string camera_pose_topic = string("/vins_estimator/camera_pose");
-    ROS_DEBUG("[VO] Subscribe to camera_pose_topic: %s", camera_pose_topic.c_str());
-//    message_filters::Subscriber<nav_msgs::Odometry> camera_pose_sub(nh, camera_pose_topic, 100);
+    ROS_DEBUG("[VO] Subscribe to camera_pose_topic: %s", camera_pose_topic.c_str());//    message_filters::Subscriber<nav_msgs::Odometry> camera_pose_sub(nh, camera_pose_topic, 100);
     ros::Subscriber sub_pose = nh.subscribe(camera_pose_topic, 100, pose_callback);
+
+//    string odometry_topic = string("/vins_estimator/odometry");
+//    ROS_DEBUG("[VO] Subscribe to camera_pose_topic: %s", odometry_topic.c_str());//    message_filters::Subscriber<nav_msgs::Odometry> camera_pose_sub(nh, camera_pose_topic, 100);
+//    ros::Subscriber sub_odometry = nh.subscribe(odometry_topic, 100, pose_callback);
+
 
 //    string detection_image_topic = string("/darknet_ros/detection_image");
 //    ROS_INFO("[VO] Subscribe to detection_image_topic: %s", detection_image_topic.c_str());

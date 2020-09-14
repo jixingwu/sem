@@ -28,6 +28,7 @@ public:
     Eigen::Vector4d bbox_vec_;           // xmin, ymin , width, height
 
     double meas_quality_;                // [0,1] the higher, the better
+    Eigen::Vector2d box_config_type_;    // configuration, vp1 left/right
     Eigen::MatrixXi box_corners_2d_;     // 2*8 on image usually for local cuboids on reference frame.
     Eigen::MatrixXi edge_markers_;       // in order to plot 2d cuboids with 8 corners.
     cv::Rect bbox_2d_tight_;             // tighted 2d object, used to find points association.

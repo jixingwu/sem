@@ -145,6 +145,8 @@ public:
     bool checkReceivedPose();
     bool isBboxesInImage(Vector4d v, cv::Mat image);
 
+    void visualization();
+
 };
 
 #endif //SRC_VISUAL_ODOMETRY_H

@@ -5,6 +5,7 @@
 #include <ros/console.h>
 #include "visual_odometry.h"
 #include "src/visualization/config.h"
+#include "src/visualization/visualization.h"
 #include "TermColor.h"
 #include "src/detect_3d_cuboid/object_3d_util.h"
 
@@ -73,23 +74,23 @@ bool VisualOdometry::addFrame(Frame::Ptr frame)
         {
             state_ = OK;
             curr_ = frame;
-            frameBuf.push(curr_);
+
             generateCubeProposal();
             trackCubes();
             addKeyFrame();// the first frame is a key-frame
+            visualization();
             ref_ = curr_;
             break;
         }
         case OK:
         {
             curr_ = frame;// 当前帧更新
-            frameBuf.push(curr_);
             generateCubeProposal();
             cubeMatching();// equal to featureMatching();
             trackCubes();// matching 后tracking得到的匹配，设置为相同的id
-//            estimator.optimization(ref_, curr_); // local BA
             optimizeCube();
             addKeyFrame();
+            visualization();
             ref_ = curr_;
             break;
         }
@@ -206,9 +207,17 @@ void VisualOdometry::generateCubeProposal()
     vector<ObjectSet> all_obj_cubes;
     detect_cuboid_obj->detect_cuboid(raw_rgb_image, transToWorld, all_object_coor, v_class, all_lines_raw, all_obj_cubes);
 
+    if(all_object_coor.size() == 0)
+        ROS_WARN("bbox is empty!");
+
+    if(all_obj_cubes.empty())
+        ROS_WARN("cubes is empty!");
+
+    pubTrackImage(detect_cuboid_obj->cuboids_2d_img, curr_->time_stamp_);
     bool isSavedImage = true;
     if(isSavedImage)
     {
+
         cvNamedWindow("detect_cuboid_obj->cuboids_2d_img");
         cvMoveWindow("detect_cuboid_obj->cuboids_2d_img", 20, 300);
         cv::imshow("detect_cuboid_obj->cuboids_2d_img", detect_cuboid_obj->cuboids_2d_img);
@@ -226,17 +235,21 @@ void VisualOdometry::generateCubeProposal()
 
 
     // cp and analyze results.对于每个检测到的raw cube，将其转换为可添加到SemMap中的类型——MapCube
-    curr_->local_cuboids_.clear();
+//    curr_->local_cuboids_.clear();
     // previous frame_pose_to_init = curr_->T_c_w_;
     // transToWorld_se3;
+
+    cout<<"all_obj_cubes size: "<<all_obj_cubes.size()<<endl;
     for (int ii = 0; ii < (int)all_obj_cubes.size(); ++ii)
     {
         if(!all_obj_cubes[ii].empty())
         {
+            cout<<"----";
             cuboid *raw_cuboid = all_obj_cubes[ii][0];
             Vector9d cube_pose;// Vector3d t, roll yall pitch, Vector3d scale
             cube_pose<< raw_cuboid->pos[0], raw_cuboid->pos[1], raw_cuboid->pos[2], 0, 0, raw_cuboid->rotY,
                 raw_cuboid->scale[0], raw_cuboid->scale[1], raw_cuboid->scale[2];
+
             Eigen::AngleAxisd rollAngle(AngleAxisd(cube_pose[3], Vector3d::UnitX()));
             Eigen::AngleAxisd pitchAngle(AngleAxisd(cube_pose[4], Vector3d::UnitY()));
             Eigen::AngleAxisd yawAngle(AngleAxisd(cube_pose[5], Vector3d::UnitZ()));
@@ -254,6 +267,7 @@ void VisualOdometry::generateCubeProposal()
             newcuboid->bbox_vec_ = Vector4d((double)newcuboid->bbox_2d_.x, (double)newcuboid->bbox_2d_.y,
                                            (double)newcuboid->bbox_2d_.width, (double)newcuboid->bbox_2d_.height);// xmin, ymin, width, height
             newcuboid->box_corners_2d_ = raw_cuboid->box_corners_2d;
+            newcuboid->box_config_type_ = raw_cuboid->box_config_type;
             newcuboid->bbox_2d_tight_ = cv::Rect(raw_cuboid->rect_detect_2d[0] + raw_cuboid->rect_detect_2d[2] / 10.0,
                                                 raw_cuboid->rect_detect_2d[1] + raw_cuboid->rect_detect_2d[3] / 10.0,
                                                 raw_cuboid->rect_detect_2d[2] * 0.8, raw_cuboid->rect_detect_2d[3] * 0.8);
@@ -274,8 +288,14 @@ void VisualOdometry::generateCubeProposal()
 
     ROS_DEBUG_NAMED("generateCubeProposal()", "detected cube num: %zu", curr_->local_cuboids_.size());
 
-    __DEBUG_GENERATE__(cout<<"curr_.local_cuboids_.size(): "<<curr_->local_cuboids_.size()<<endl;)
+    cout<<"curr_.local_cuboids_.size(): "<<curr_->local_cuboids_.size()<<endl;
     ROS_DEBUG_NAMED("generateCubeProposal()", "ending detection!");
+    for(auto &mapCube:curr_->local_cuboids_)
+    {
+        ROS_DEBUG_ONCE("frame id: %lu", curr_->id_);
+        outputCuboids(mapCube);
+    }
+
 
 }
 #define __DEBUG_MATCH__(msg) ;
@@ -506,7 +526,13 @@ void VisualOdometry::optimizeCube()
 {
     ROS_DEBUG_NAMED("optimizeCube()", "%lu: starting opt", curr_->id_);
     estimator.optimization(map_, curr_);
-    cv::Mat plot_image = curr_->rgb_image_.clone();
-    plot_image_with_cuboid(plot_image, curr_->local_cuboids_);
 
+}
+
+void VisualOdometry::visualization()
+{
+    for(auto &mapCube : curr_->local_cuboids_)
+    {
+        pubCuboids(mapCube, Vector3d(0,1.0,0), curr_->time_stamp_);
+    }
 }
